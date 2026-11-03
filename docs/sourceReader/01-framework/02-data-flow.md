@@ -1,6 +1,12 @@
-# 主数据流与整体运行流程
+# Main data flow end to end
 
-## 请求流转全景图（ASCII）
+English | [中文](02-data-flow.zh.md)
+
+This page follows "one request" from start to finish: from the command line through plugin installation, Agent start, streaming model replies, tool execution, and log persistence, with a diagram at every stop. When a term is unfamiliar, check the glossary in [README.md](../README.md); for a finer look at any stage, each section points to its detailed document.
+
+## Request flow panorama (ASCII)
+
+The big picture first: a task enters from the command line and passes through "launch environment → install plugins → create Agent → inference loop", and all key actions converge into the same Session log.
 
 ```
                     ┌─────────────────────────────────────────────┐
@@ -14,7 +20,7 @@
                     │  1. loadLayeredEnv()    ← .env 文件         │
                     │  2. resolveProfileDir() ← $DSH_HOME          │
                     │  3. readProfilePatches() ← Bundle 列表       │
-                    │  4. boot(cordisTree)      ← Cordis Loader    │
+                    │  4. boot(...)             ← Cordis Loader    │
                     └──────────────────┬──────────────────────────┘
                                        │
                ┌───────────────────────┼───────────────────────┐
@@ -50,7 +56,7 @@
                     │   │    tool calls │                           │
                     │   │              │                           │
                     │   │ 4. execute    │ → ctx.tools.execute()     │
-                    │   │    each call  │   → append tool/result    │
+                    │   │    the batch  │   → append tool/result    │
                     │   │              │                           │
                     │   │ 5. loop?      │ ← model wants more tools? │
                     │   └──────────────┘                           │
@@ -67,15 +73,19 @@
                     │     → assistant/message → step/end → turn/end│
                     │                                              │
                     │   写入: JSONL v4 (.jsonl.zstd)               │
-                    │   位置: $DSH_HOME/sessions/<id>/             │
+                    │   位置: $DSH_HOME/sessions/                  │
                     └─────────────────────────────────────────────┘
 ```
 
 ---
 
-## 数据流详解
+## Flow details
 
-### 1. 启动阶段数据流
+Each stop in the panorama, unpacked below. Every flow diagram keeps the real call names from the source so you can jump straight into the code.
+
+### 1. Launch-time flow
+
+Launching means assembling three inputs (environment variables, Profile config, user overlay) into one plugin list and handing it to Cordis to install:
 
 ```
 .env 文件
@@ -95,45 +105,51 @@ Cordis Loader
 Context (ctx) ← 所有服务注入完毕
 ```
 
-### 2. Agent 创建数据流
+### 2. Agent creation flow
+
+After plugins are installed there is no conversation yet; creating an Agent is where work actually starts. Creation wires up four things: open the log, build the driver, run setup, announce the birth:
 
 ```
-ctx.agents.create({
-  sessionId: "abc-123",
-  agentOptions: { provider: "deepseek", model: "deepseek-chat" }
-})
+ctx.agents.create({ sessionId, agentOptions })
   │
-  ├─► SessionStore.create(sessionId, { meta })
+  ├─► ctx.sessions.prepare(sessionId, { meta })
   │     → 创建内存 Session 实例
   │     → 触发 session/created 事件
   │
-  ├─► ReactLoopAgent(ctx, sessionId, options, session)
-  │     → 创建 ReactLoopInbox（维护 next-turn / next-step 队列）
-  │     → 创建 RuntimeContextProjection
-  │     → 注册 turnBoundary 投影
+  ├─► ReactLoopAgent(loopCtx, sessionId, options, session, projections, lastTurn)
+  │     → 创建 ReactLoopInbox（折叠 agent/inbox/spliced 投影）
+  │     → 创建 RuntimeContextProjection + SystemPromptProjection
   │
-  ├─► agent/created 事件（waterfall，监听器可注入 context）
+  ├─► agent.scope 内执行 setup 回调
+  │
+  ├─► ctx.agents.enter(agent)
+  │     → 等待 agent/created 监听器 settle（serial）
   │
   └─► 返回 AgentHandle { agent, dispose }
 ```
 
-### 3. 用户输入流入数据流
+### 3. User input flow
+
+Every user message is first written to the log (so it can never be lost), and only then wakes the Agent to pick it up:
 
 ```
-用户调用 handle.agent.followup({ content: [...] })
+用户调用 handle.agent.followup(message)
   │
-  ├─► Inbox.append(message, { target: 'next-turn' })
+  ├─► Inbox.append(message, target='next-turn')
+  │     → session.append('agent/inbox/spliced', ...)
   │     → 触发 agent/inbox/inserted 事件
   │
   ├─► 唤醒 Agent Loop（如果处于 idle 状态）
   │
   └─► Agent Loop 在 Turn 边界时：
-        Inbox.claimNextTurnInput()
+        inbox.claim('next-turn', turn)
           → 取出消息，触发 agent/inbox/claimed 事件
           → 传入 pre-step 组装阶段
 ```
 
-### 4. 一次完整 Turn 的数据流
+### 4. One complete Turn
+
+This is the system's "engine": one conversation round = prepare materials → ask the model → run tools → ask the model again ... until the model stops asking for tools:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -142,48 +158,45 @@ ctx.agents.create({
 ├─────────────────────────────────────────────────────────┤
 │ STEP LOOP (每轮)                                        │
 │                                                         │
-│  [1] 系统提示词组装                                       │
-│      systemPrompt.assemble(agentCtx)                    │
+│  [1] 准入与组装                                          │
+│      inbox.claim(target, turn)                          │
+│      tools.resolve({ agent, modelSelection, signal })   │
+│      systemPrompt.assemble({ modelSelection, toolSet }) │
 │        → 拼接所有 PromptSection                         │
-│        → 注入当前工具 Schema                             │
-│        → 返回 { systemText, toolSchemas, ... }          │
+│        → 返回 PromptAssembly { sections, contexts, ... }│
+│      agent/pre-step waterfall                           │
+│        → 默认决策：改写进入的 messages 或拒绝            │
 │                                                         │
-│  [2] 历史推导                                            │
-│      session.deriveMessages()                           │
-│        → 读取所有 surface 事件                           │
-│        → 过滤出模型可见的 Message[]                       │
-│        → 附加最新 system/message 节点                    │
+│  [2] 请求准备                                            │
+│      prepareRequest()                                   │
+│        → 从 session.requestHeader() 读取上次配置        │
+│        → agent/request waterfall                        │
+│        → ctx.llm.prepareCall(config, signal)            │
 │                                                         │
-│  [3] 模型请求                                            │
-│      ctx.llm.stream({                                  │
-│        provider, model,                                 │
-│        messages: derivedHistory,                        │
-│        tools: toolSchemas,                              │
-│        signal                                          │
-│      })                                                 │
-│        → Provider 适配器（如 DeepSeek）处理 HTTP 请求    │
-│        → 返回 AsyncIterable<StreamChunk>                │
+│  [3] 请求构建                                            │
+│      buildRequest(...)                                  │
+│        → canonicalHeader + request/header 事件          │
+│        → 工具增减写 developer/message                   │
+│        → session.deriveMessages()（deep-freeze 后发送） │
+│        → markAgentLoopRequest(Object.freeze(...))       │
 │                                                         │
 │  [4] Stream 处理                                         │
 │      AssistantStreamAttempt(stream)                     │
-│        → 累积 text/reasoning/tool-calls chunks          │
+│        → 累积 text/reasoning/tool-call chunks           │
 │        → 结束时生成 AssistantMessage 或 Attempt         │
 │                                                         │
 │  [5] 工具调用执行（如有）                                  │
-│      FOR EACH toolCall in response.toolCalls:           │
+│      ctx.tools.execute({ calls, maxParallelToolCalls }) │
 │        ├─ tools/pre-execute (waterfall)                 │
-│        │   → 权限策略检查、限流                          │
+│        ├─ 守卫检查 + 审批路由                            │
 │        ├─ tools/execute (waterfall)                     │
-│        │   → 执行 ToolDefinition.execute()              │
-│        │   → 返回 ToolExecutionResult                   │
 │        ├─ tools/post-execute (waterfall)                │
-│        │   → 结果替换/审计                               │
-│        └─ session.append('tool/result', ...)            │
-│            → 触发 tool/result 事件                       │
+│        ├─ tools/result (emit)                           │
+│        └─ session.append('tool/call'/'tool/result')     │
 │                                                         │
 │  [6] Step 结束判断                                       │
 │      无更多 tool calls？→ 退出 Step 循环                │
-│      有？→ 回到 [1] 重新推导历史（含工具结果）            │
+│      有？→ 回到 [1] 重新组装（含工具结果）                │
 │                                                         │
 ├─────────────────────────────────────────────────────────┤
 │ TURN END                                                │
@@ -191,7 +204,9 @@ ctx.agents.create({
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 5. Session 日志写入数据流
+### 5. Session log write flow
+
+Every append passes five gates: is the type known, is the content valid, can the snapshot serialize losslessly — only then does it enter memory and fire events:
 
 ```
 session.append(type, data, opts?)
@@ -200,8 +215,7 @@ session.append(type, data, opts?)
   │
   ├─► Surface 事件验证（system/user/assistant/developer/tool/result）:
   │     - 必须有 surfaceOp
-  │     - 必须有 source
-  │     - 替换操作必须引用有效的 startSeq/endSeq
+  │     - 替换操作必须引用有效的 seq 范围
   │
   ├─► lossless JSON 快照验证:
   │     snapshotJsonValue() — 一次性读取+验证+拷贝
@@ -213,51 +227,54 @@ session.append(type, data, opts?)
   │
   ├─► 刷新 surface 投影（contentGeneration / replaceGeneration）
   │
-  ├─► emit('session/event', event)  — 广播给所有监听器
-  │
-  └─► 如果有 persistence 后端：
-        批量缓冲，等待 session/flush 或自动 checkpoint
+  └─► 触发 session/event（调用方各自订阅处理）
 ```
 
-### 6. 持久化数据流
+### 6. Persistence flow
+
+Beyond the in-memory log, a persistence backend handles "flushing to disk" and "resuming after restart". Writes go through buffered batches; on resume every line is validated and unknown types are rejected outright:
 
 ```
-SessionPersistence 后端（如 session-log-deepseek）
+SessionPersistence 后端（如 session-persistence-jsonl）
   │
   ├─► 监听 session/event 事件
-  │     → 写入 JSONL 文件（压缩为 .zstd）
+  │     → 缓冲 live 事件，批量写入 JSONL（.jsonl.zstd 压缩帧）
   │
   ├─► 监听 session/flush 事件
-  │     → fsync 确保磁盘落盘
+  │     → drain + fsync 确保磁盘落盘
   │
-  └─► 监听 session/disposed 事件
+  └─► handle close
         → 关闭文件句柄，释放资源
 
 读取（resume）:
   sessionPersistence.open(sessionId, 'write')
-    → 扫描目录，找到最高版本号文件
-    → 解析 JSONL，逐事件验证
-    → 应用相邻迁移链（vN → vN+1）
+    → 选择数值最高的 canonical generation 文件
+    → 解码 zstd，逐行解析 JSONL，逐事件验证
+    → 拒绝未知必需事件类型（fail-closed）
     → 返回 SessionHandle（可追加）
 ```
 
 ---
 
-## 错误传播路径
+## Error propagation paths
+
+Who catches an error, where it travels, and what the user finally sees. Note the design stance: tool-level failures do not sink the whole conversation; only model-level faults end the Turn:
 
 | 错误发生点 | 传播路径 | 最终表现 |
 |---|---|---|
-| Provider 认证失败 | `llm/stream` → `LlmError.AUTH` | 步骤失败，记录 attempt 事件 |
-| 工具执行超时 | `tools/execute` → `TOOL_TIMEOUT` | 返回 error result，不中断 Turn |
-| Session 写入失败 | `session.append()` 抛出 | Agent 驱动 catch 后转为 attempt |
-| 用户取消 | `AbortSignal.reason` = `cancel()` | 当前 Step 中止，已流式文本保留 |
-| 模型上下文溢出 | `LlmError.CONTEXT_WINDOW_EXCEEDED` | 步骤失败，可触发 compaction |
+| Provider 调用失败 | `llm/stream` → `LlmError.failure` | attempt 记录，`agent/request-error` 决定重试 |
+| 工具执行超时 | timeout policy 包装 `tools/execute` | 返回 error result，不中断 Turn |
+| 工具调用崩溃 | `ToolBatchExecutionError(error, partial)` | 已完成结果保留，剩余调用补合成结果 |
+| 用户取消 | `AbortSignal` 带 `AgentCancelCause` | 当前 Step 中止，已流式文本保留（`interrupted: true`） |
+| 模型上下文溢出 | `LlmError` code `CONTEXT_WINDOW_EXCEEDED` | Turn 以 error 结束，可触发 compaction |
 
 ---
 
-## 关键流程中的不可变对象
+## Immutable objects in key flows
 
-- **Request**: `ctx.llm.prepareCall()` 返回 deep-frozen 配置，Provider 不可修改
-- **Tool args**: 通过 `snapshotJsonValue()` 后 deep-freeze，执行函数收到不可变参数
-- **Session events**: 追加后 `deepFreeze()`，不可被后续修改
-- **Assistant stream**: 累积后 compact 存储，完整嵌入 `assistant/message` 事件
+The system "freezes" data at key positions so downstream code cannot quietly change it and desynchronize the log from reality. These four kinds of objects are immutable once created:
+
+- **Request**: the config `ctx.llm.prepareCall()` returns is deep-frozen; providers cannot modify it
+- **Tool args**: snapshotted through `snapshotJsonValue()` and deep-frozen; the execute body receives immutable arguments
+- **Session events**: `deepFreeze()`d on append; later code cannot modify them
+- **Assistant stream**: compacted once settled and embedded whole in the `assistant/message` event

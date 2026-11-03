@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for 02-tools.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/04-source/02-tools.md
+/tools-package-reference:
+  en: 8afd2ecd7d247acb
+  zh: 6bec9d0d7286f0ac
+/tools-package-reference/module-overview:
+  en: 1938d03ba1b64e35
+  zh: 9c041bc5a2d0309e
+/tools-package-reference/index-ts-the-toolsservice:
+  en: b3312372ce7ab685
+  zh: e398c5e730ea83dd
+/tools-package-reference/index-ts-the-toolsservice/service-declaration-1-100:
+  en: 9c9572ff2dad80d6
+  zh: 9c9572ff2dad80d6
+/tools-package-reference/index-ts-the-toolsservice/the-toollayer-class-63-100:
+  en: 558f564192ec8721
+  zh: 9aa1065db69ec357
+/tools-package-reference/index-ts-the-toolsservice/the-toolview-interface-54:
+  en: 3252f95b2e345016
+  zh: a8ea10089a12ef23
+/tools-package-reference/toolsservice-methods:
+  en: 8a0de90f3092d7b7
+  zh: 48cce67f6e02a7bc
+/tools-package-reference/toolsservice-methods/register-def-options-index-ts-128:
+  en: 5eeaf7348bb4d858
+  zh: bb00d783e7a169c3
+/tools-package-reference/toolsservice-methods/restrict-filter-162:
+  en: 4b67601edbc35ed2
+  zh: 69d01ea324cf7602
+/tools-package-reference/toolsservice-methods/schemas-scope-toolset-316:
+  en: ae10c568565acfe6
+  zh: 12fd622eb9fa452d
+/tools-package-reference/toolsservice-methods/execute-input-375-the-execution-entry:
+  en: 0f2cca0aea1e4425
+  zh: 8f3a475a4384c33d
+/tools-package-reference/toolsservice-methods/get-name-scope-toolset-239:
+  en: 241ec1426ed9b7c0
+  zh: abe941cf045e7711
+/tools-package-reference/schema-ts-the-definetool-dsl:
+  en: b2940f52bc906396
+  zh: f8707e162e08bf46
+/tools-package-reference/schema-ts-the-definetool-dsl/definetool-options-555:
+  en: e4e8355f8fbb6d32
+  zh: 996cd1169625af21
+/tools-package-reference/schema-ts-the-definetool-dsl/valueschemaspectojsonschema-spec:
+  en: 6ceb4f1f8bb7b16f
+  zh: 6ceb4f1f8bb7b16f
+/tools-package-reference/schema-ts-the-definetool-dsl/projecttoolschema-definition-detachparameters-641:
+  en: d69ecc2245bb6d89
+  zh: c23ab688a8fd6eb6
+/tools-package-reference/key-error-types:
+  en: ec910412a7d8899e
+  zh: 05ca49283a5a3a99
+/tools-package-reference/ptc-mode-notes:
+  en: 1c1db66de7079f84
+  zh: 633b0d3e96bd6128

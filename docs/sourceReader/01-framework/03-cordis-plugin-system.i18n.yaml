@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 03-cordis-plugin-system.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/01-framework/03-cordis-plugin-system.md
+/cordis-plugin-system-basics:
+  en: e1534e45a46a769f
+  zh: f1ae5676952bf18f
+/cordis-plugin-system-basics/five-core-concepts:
+  en: 57b8871c428d9542
+  zh: 7f551c2c05389596
+/cordis-plugin-system-basics/five-core-concepts/1-plugin:
+  en: 27b593d60512659c
+  zh: 8de8eee48e68cded
+/cordis-plugin-system-basics/five-core-concepts/2-context:
+  en: 7853edcd766673b8
+  zh: 82aa9dbfe58ae47e
+/cordis-plugin-system-basics/five-core-concepts/3-typed-events:
+  en: 9d86da1351ec6d9c
+  zh: ada4ec8ba40f111f
+/cordis-plugin-system-basics/five-core-concepts/4-waterfall-semantics:
+  en: c2370bdafba00b2e
+  zh: d066b78602edc46f
+/cordis-plugin-system-basics/five-core-concepts/5-registrations-are-effects:
+  en: 039f73ee571a9566
+  zh: 37c9d3af70757552
+/cordis-plugin-system-basics/plugin-lifecycle:
+  en: d7336c4059a0b399
+  zh: c794b2c525be1a55
+/cordis-plugin-system-basics/plugin-examples-in-dsh:
+  en: 8d6b676c09f91833
+  zh: e02e189b6d40b28b
+/cordis-plugin-system-basics/plugin-examples-in-dsh/tool-service-tools:
+  en: 1a7ac4431203c611
+  zh: 0fe1770a4fd20c85
+/cordis-plugin-system-basics/plugin-examples-in-dsh/llm-service-llm-llm:
+  en: 7d9fe58a9542e68f
+  zh: 2311ef54ca4be8a1
+/cordis-plugin-system-basics/service-definition-provider-consumer:
+  en: 299c379b3d4eb384
+  zh: dd6f628369b97ed0
+/cordis-plugin-system-basics/fiberstate:
+  en: 8d792dcafd69d227
+  zh: 513468ac839a494d

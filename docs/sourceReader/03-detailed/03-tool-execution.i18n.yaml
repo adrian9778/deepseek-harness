@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 03-tool-execution.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/03-detailed/03-tool-execution.md
+/the-tool-execution-pipeline:
+  en: cf0f4cce98a8de0e
+  zh: 014471af4e370a0b
+/the-tool-execution-pipeline/pipeline-overview:
+  en: 7ebaf23f14df797c
+  zh: e79b7c555dac1d2f
+/the-tool-execution-pipeline/the-tooldefinition-structure:
+  en: 60844e9579cac033
+  zh: 8dd30a105d9504fb
+/the-tool-execution-pipeline/the-definetool-dsl:
+  en: 9a05c87a765b73a8
+  zh: bd004cea1dbefcef
+/the-tool-execution-pipeline/the-toolsservice-pipeline-implementation:
+  en: 82fa41cd15fb7c3a
+  zh: 0a4d6f20b697c7b9
+/the-tool-execution-pipeline/parallel-and-exclusive-tool-scheduling:
+  en: 5180af706eb2e7d0
+  zh: 57fa975201f5f3c4
+/the-tool-execution-pipeline/the-tool-run-context-toolruncontext:
+  en: ab50ba3952d074cc
+  zh: 3627134600deaa50
+/the-tool-execution-pipeline/key-source-map:
+  en: ef624dfa5c39ac14
+  zh: 024fb28ff2c98f8b

@@ -1,0 +1,73 @@
+# Bilingual-pair consistency record for 01-session.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/04-source/01-session.md
+/session-package-reference:
+  en: 6e58198f997be6c3
+  zh: 46b462e582ad2e8c
+/session-package-reference/module-overview:
+  en: 03aab7d7c32ff4da
+  zh: 190f00e3c679ac62
+/session-package-reference/types-ts-type-definitions:
+  en: a8669c24153b9447
+  zh: 0e07bf65318d43f0
+/session-package-reference/types-ts-type-definitions/branded-types-1-60:
+  en: 5f220c2e3124578d
+  zh: 14f6a17233ab38d4
+/session-package-reference/types-ts-type-definitions/session-format-version-65-120:
+  en: c1abea6427659b87
+  zh: b719b7303a4613d9
+/session-package-reference/types-ts-type-definitions/sessioneventmap-150-350:
+  en: 792bcc9f2babd27e
+  zh: 2db0584721328cd1
+/session-package-reference/types-ts-type-definitions/turnendreason-206-238:
+  en: 7c79129a2f81c965
+  zh: e64054a0decdaa35
+/session-package-reference/index-ts-the-session-class:
+  en: 47ce61ce4d4768e9
+  zh: e22e8d7a4d1c947a
+/session-package-reference/index-ts-the-session-class/constructor-550-700:
+  en: 70769131ea0d9c49
+  zh: dc62ce4cb05d5a45
+/session-package-reference/index-ts-the-session-class/append-session-index-ts-806:
+  en: 66ebc7735ebb6936
+  zh: 44a4909d5a09df06
+/session-package-reference/index-ts-the-session-class/commit-session-index-ts-892:
+  en: 7e0c32cd87d702e0
+  zh: 4c20c42f816e7ad6
+/session-package-reference/index-ts-the-session-class/derivemessages-session-index-ts-999:
+  en: 5ecd408ab3c38076
+  zh: f34bea11a40a002b
+/session-package-reference/index-ts-the-session-class/requestheader-session-index-ts-927:
+  en: 302230d4fb54fc1f
+  zh: 74725fb0000d1daa
+/session-package-reference/index-ts-the-session-class/toolhistory-session-index-ts-968:
+  en: c671ff9580231b8a
+  zh: bca7efe7258b2e1c
+/session-package-reference/surface-ts-the-surface-manager:
+  en: 51b69e7c1762f45c
+  zh: 36a7b653f1c8c455
+/session-package-reference/surface-ts-the-surface-manager/the-surfacemanager-class:
+  en: 82fc370df39e0e96
+  zh: 33c7c3f2a0baff97
+/session-package-reference/surface-ts-the-surface-manager/validatenext-event-637:
+  en: 254ece86a86e17af
+  zh: 4525635fbaaf6ab2
+/session-package-reference/surface-ts-the-surface-manager/deriveeventmessage-event-667:
+  en: a0ba8dba4c4e15d5
+  zh: cdf9a6b9325b59d3
+/session-package-reference/surface-ts-the-surface-manager/foldsurface-events-projections-594:
+  en: 5a7831f6fc041f2c
+  zh: 2a8d11206d3dc9cc
+/session-package-reference/request-header-ts-request-header-folding:
+  en: fd97ab05e1d78e95
+  zh: 196847209942b356
+/session-package-reference/request-header-ts-request-header-folding/foldrequestheader-events-previous-63:
+  en: d46ad8d596d72a7e
+  zh: eed9e615d996d4c0
+/session-package-reference/request-header-ts-request-header-folding/canonicalheader-config-adapterdefaults-tools-21:
+  en: 94a1f528303a4a3b
+  zh: 9c4fc900b67d26e1
+/session-package-reference/request-header-ts-request-header-folding/headerequals-a-b-43:
+  en: 43dfd85ad363afee
+  zh: 607c0fe09de7ad20

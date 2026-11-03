@@ -1,14 +1,26 @@
-# Cordis 插件系统基础
+# Cordis plugin system basics
 
-> Cordis 是 vendored 到 `vendor/` 的插件框架。dsh 的一切都是插件——包括模型适配器、工具注册表、Session 日志、Agent Loop 本身。
+English | [中文](03-cordis-plugin-system.zh.md)
+
+> Cordis is the plugin framework vendored under `vendor/`. Everything in dsh is a plugin — model adapters, the tool registry, the Session log, the Agent Loop itself.
+
+Before reading dsh source you must understand Cordis, because dsh has no "functions you call directly" — every capability is installed as a plugin, reached through ctx, and coordinated through events. This page explains the mechanics with five concepts plus one lifecycle; every rule has a corresponding implementation in `vendor/cordis/`.
 
 ---
 
-## 五个核心概念
+## Five core concepts
 
-### 1. Plugin（插件）
+| Concept | In one sentence |
+|---|---|
+| Plugin | One functional unit installed into the system |
+| Context | The "service repository" shared by all functional units |
+| Typed Events | The "broadcast station" between functional units |
+| Waterfall | An event pipeline that can be intercepted and rewritten station by station |
+| Registrations are Effects | Everything installed can be uninstalled automatically |
 
-Plugin 是实现 `Service` 接口的对象。可以是函数或 `Service` 子类：
+### 1. Plugin
+
+A Plugin is an object implementing the `Service` interface. It can be a function or a `Service` subclass:
 
 ```ts
 // 函数式插件
@@ -27,9 +39,9 @@ class MyPlugin extends Service {
 }
 ```
 
-### 2. Context（上下文）
+### 2. Context
 
-Context 是服务的仓库。插件通过 `ctx.<key>` 访问其他服务：
+The Context is the service repository. Plugins reach other services through `ctx.<key>`:
 
 ```ts
 ctx.sessions.create(sessionId, options)   // 创建 Session
@@ -38,22 +50,22 @@ ctx.llm.stream(options)                   // 调用 LLM
 ctx.agents.create(options)                // 创建 Agent
 ```
 
-**关键设计**：插件之间不直接导入，通过 ctx key 解耦。
+**Key design**: plugins never import each other; they decouple through ctx keys.
 
-### 3. Typed Events（类型化事件）
+### 3. Typed Events
 
-服务间通信通过事件，TypeScript 声明合并定义事件类型：
+Services communicate through events instead of calling each other: one plugin "broadcasts" something, and interested plugins each listen. Event types come from TypeScript declaration merging; a misspelled event name fails at compile time:
 
 ```ts
 // 在某个包的 types.ts 中声明
-declare global {
-  interface SessionEventMap {
+declare module '@deepseek-ai/cordis' {
+  interface Events {
     'my-plugin/event': { foo: string }
   }
 }
 ```
 
-五种分发模式：
+The five dispatch modes:
 
 | 模式 | 是否 await | 顺序 | 有返回值？ | 典型用途 |
 |---|---|---|---|---|
@@ -63,11 +75,13 @@ declare global {
 | `serial` | 是 | 顺序 | 是 | 串行策略检查 |
 | `bail` | 否 | 顺序，首个 bail 值终止 | 是 | 权限否决 |
 
-### 4. Waterfall 语义
+### 4. Waterfall semantics
 
-Waterfall 监听器接收 `(...args, next)`：
-- 调用 `next(result)` → 将（可能改写的）结果传给下一个监听器
-- 直接 `return newValue` → 短路，后续监听器只看到新值
+Waterfall is the most special of the five dispatch modes: the event flows through every listener like an assembly line, and each station may rewrite the result or short-circuit outright. This is the bedrock of dsh's interception logic such as permission checks and content rewriting.
+
+A Waterfall listener receives `(...args, next)` and picks one of two actions:
+- Calling `next(result)` passes the (possibly rewritten) result to the next listener
+- Returning `newValue` directly short-circuits; later listeners only see the new value
 
 ```ts
 ctx.on('tools/pre-execute', (call, next) => {
@@ -78,9 +92,9 @@ ctx.on('tools/pre-execute', (call, next) => {
 })
 ```
 
-### 5. Registrations are Effects（注册是可逆效果）
+### 5. Registrations are effects
 
-所有挂载通过 `ctx.effect()` 或 `ctx.on()`，卸载时自动回滚：
+Everything mounts through `ctx.effect()` or `ctx.on()` and is rolled back automatically at unload:
 
 ```ts
 ctx.effect(() => {
@@ -94,7 +108,7 @@ ctx.effect(() => {
 
 ---
 
-## 插件生命周期
+## Plugin lifecycle
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -110,67 +124,50 @@ ctx.effect(() => {
 └──────────────────────────────────────────────────────────┘
 ```
 
-**关键约束**：
-- `inject` 声明的依赖必须先于当前插件加载
-- 返回的 disposer 函数在卸载时按逆序调用
-- 卸载失败不会提前释放依赖的投影（projection）
+**Key constraints**:
+- Dependencies declared in `inject` must load before the current plugin
+- Returned disposers run in reverse order at unload time
+- An unload failure does not release dependent projections early
 
 ---
 
-## dsh 中的 Plugin 示例
+## Plugin examples in dsh
 
-### 工具注册插件（tools/）
+### Tool service (tools/)
 
-Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts`](../../../packages/core/tools/src/index.ts)
 
 ```ts
-export class ToolRuntime implements Service {
-  static override inject = []  // 不依赖其他服务
+export class ToolsService extends Service {
+  static override inject = ['systemPrompt']
 
-  override apply(ctx: Context): Disposer {
-    const registry = new ToolRegistry()
-
-    // 暴露 ctx.tools 键
-    ctx.set('tools', {
-      register(toolDef) { registry.register(toolDef) },
-      restrict(filter) { return registry.restrict(filter) },
-      execute(name, args) { return registry.execute(name, args) },
-    })
+  constructor(ctx: Context) {
+    super(ctx, 'tools')
 
     // 注册工具执行事件管线
-    ctx.on('tools/pre-execute', async (call, next) => { ... })
-    ctx.on('tools/execute', async (call, next) => { ... })
-    ctx.on('tools/post-execute', async (call, next) => { ... })
-    ctx.on('tools/result', (result) => { ... })
-
-    return () => { /* 清理 */ }
+    ctx.on('tools/pre-execute', async (exec, next) => { ... })
+    ctx.on('tools/execute', async (exec, next) => { ... })
+    ctx.on('tools/post-execute', async (exec, result, next) => { ... })
+    ctx.on('tools/result', (exec, result) => { ... })
   }
+
+  register(definition, options) { ... }   // 注册工具，返回 disposer
+  restrict(filter) { ... }                // 限制可见工具，返回 disposer
+  async execute(input) { ... }            // 批量执行入口，委托给 executor
 }
 ```
 
-### LLM 服务插件（llm/llm）
+### LLM service (llm/llm)
 
-Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts`](../../../packages/llm/llm/src/index.ts)
 
 ```ts
-export class LlmService implements Service {
-  static override inject = []
-
-  override apply(ctx: Context): Disposer {
-    const adapters = new Map<string, LlmAdapter>()
-
-    ctx.set('llm', {
-      async stream(options) {
-        const adapter = adapters.get(options.provider)
-        if (!adapter) throw new LlmError('NO_ADAPTER')
-        return adapter.stream(options)
-      },
-      registerAdapter(id, adapter) { ... },
-      listProviders() { return [...adapters.keys()] },
-    })
-
-    return () => { adapters.clear() }
-  }
+export class LlmRuntime extends TypertRemoteService {
+  registerAdapter(providers, adapter) { ... }   // 绑定 adapter 实例，原子替换路由
+  registerConfigurableProviders(entries) { ... } // 注册可由 settings 激活的 provider 元数据
+  async prepareCall(config, signal, configure?) { ... } // 绑定 adapter 并应用默认值
+  async *stream(options) { ... }                 // llm/stream waterfall 内委托 adapter
+  listProviders() { ... }
 }
 ```
 
@@ -178,19 +175,19 @@ export class LlmService implements Service {
 
 ## Service Definition / Provider / Consumer 三角色
 
-这是 dsh 架构的核心模式（称为 **Seam**）：
+This is the core dsh architecture pattern (called a **Seam**). Think of it as "a power socket": the definer specifies the socket shape (the interface), the implementer builds appliances to that shape (the implementation), and the consumer just plugs in and uses it (the call) — the three never know each other, yet they work together:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Service Definition（接口契约）                          │
-│  位置：packages/shell/shell/src/types.ts                │
-│  内容：ShellExecutor 接口、ShellRequest、ShellSpec       │
+│  位置：packages/shell/shell/src/index.ts                │
+│  内容：ShellExecutor 抽象类、ShellRequest、ShellSpec     │
 │  目的：让 Provider 和 Consumer 不互相依赖                │
 ├─────────────────────────────────────────────────────────┤
 │  Service Provider（实现）                                │
 │  位置：packages/shell/bash-local/src/index.ts           │
 │  内容：实现 ShellExecutor，spawn bash -c 进程            │
-│  注册：ctx.set('shell', executor)                       │
+│  注册：super(ctx, 'shell')                              │
 ├─────────────────────────────────────────────────────────┤
 │  Consumer（使用者）                                      │
 │  位置：packages/shell/tool-bash/src/index.ts            │
@@ -201,25 +198,26 @@ export class LlmService implements Service {
 └─────────────────────────────────────────────────────────┘
 ```
 
-一个 Seam 必须同时具备这三个角色才算完整。缺少任何一个，能力缝就没有形成。
+A Seam is complete only when all three roles are present; missing any one, the capability seam has not formed.
 
 ---
 
 ## FiberState（上下文状态机）
 
-Cordis Context 有生命周期状态，插件在加载/卸载时必须尊重：
+The Context itself is also a lifecycle state machine, and plugins must respect it while loading and unloading. When you may register new things and when the system is "closing its doors", this table tells you:
 
 | State | 含义 |
 |---|---|
-| `RESOLVING` | 正在解析依赖 |
-| `APPLYING` | 正在调用 `apply()` |
-| `APPLIED` | 全部就绪，可正常调用服务 |
+| `PENDING` | 已创建，尚未开始加载 |
+| `LOADING` | 正在解析依赖并调用 `apply()` |
+| `ACTIVE` | 全部就绪，可正常调用服务 |
+| `FAILED` | 加载失败 |
 | `UNLOADING` | 正在卸载，禁止新注册 |
 | `DISPOSED` | 完全清理完毕 |
 
-Agent Loop 在 `INACTIVE_STATES`（`UNLOADING`、`DISPOSED`、`FAILED`）时拒绝创建新 Agent：
+The Agent Loop refuses to create a new Agent while `INACTIVE_STATES` (`UNLOADING`, `DISPOSED`, `FAILED`) applies:
 
-Source: [`packages/core/agent-loop/src/index.ts`](../../packages/core/agent-loop/src/index.ts) +1-5
+Source: [`packages/core/agent-loop/src/index.ts`](../../../packages/core/agent-loop/src/index.ts) +1-5
 
 ```ts
 const INACTIVE_STATES: ReadonlySet<FiberState> = new Set([

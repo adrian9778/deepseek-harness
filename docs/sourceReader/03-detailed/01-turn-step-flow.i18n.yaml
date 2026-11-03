@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for 01-turn-step-flow.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/03-detailed/01-turn-step-flow.md
+/step-flow-inside-one-turn:
+  en: 4c2a9161eda0c861
+  zh: 03bac90e977405d8
+/step-flow-inside-one-turn/turn-and-step-definitions:
+  en: d6203e1219247169
+  zh: a4cb51d22553e881
+/step-flow-inside-one-turn/the-full-state-machine-of-one-turn:
+  en: 06e28164274bace3
+  zh: 545e15631348b3b9
+/step-flow-inside-one-turn/key-decision-points:
+  en: 68c01ee3c3e2f680
+  zh: 9f72d0a4d4025e19
+/step-flow-inside-one-turn/key-decision-points/1-the-agent-pre-step-decision:
+  en: 1634854b59501f37
+  zh: 7778d685a9789746
+/step-flow-inside-one-turn/key-decision-points/2-request-series:
+  en: 483ed25009aa6f1f
+  zh: af3757fa071150f6
+/step-flow-inside-one-turn/key-decision-points/3-tool-parallelism:
+  en: 80d7caa7439ffd17
+  zh: 2222e4b1e38bda69
+/step-flow-inside-one-turn/key-decision-points/4-cancellation-inside-a-step:
+  en: 0cad0457f13b3276
+  zh: 5c46fbe089644247
+/step-flow-inside-one-turn/event-type-summary:
+  en: 6bbd5ae52faa4c6d
+  zh: 8b92c0a36c8b14ac
+/step-flow-inside-one-turn/event-type-summary/durable-session-events:
+  en: 510a7a5bac88835a
+  zh: 71bc0f7ee9e4843f
+/step-flow-inside-one-turn/event-type-summary/live-agent-events:
+  en: a3c1427c0e91aba6
+  zh: e93c12f77b510835
+/step-flow-inside-one-turn/key-source-map:
+  en: 3427ab16a2dee1de
+  zh: ff99f24a78336b17

@@ -1,6 +1,12 @@
-# Agent 创建到完成的完整生命周期
+# Agent lifecycle: create → drive → finish
 
-## Agent 生命周期状态机
+English | [中文](00-agent-lifecycle.zh.md)
+
+An Agent's life has exactly four stages: create → drive → cancel → dispose. This page draws out "who does what when, and what happens on failure" for each stage, with a source-location table at the end. The state-machine diagram up top is the global map; the four sections below expand it piece by piece.
+
+## Agent lifecycle state machine
+
+The global picture first: an Agent's whole life is cycling between IDLE (standing by) and RUNNING (working) until disposed:
 
 ```
                     ┌──────────────┐
@@ -37,12 +43,13 @@
 
 ---
 
-## 阶段 1：创建（Create）
+## Phase 1: Create
 
-**入口**：`ctx.agents.create(options)`  
-**源码位置**：`packages/core/agent/src/index.ts` +100-200、`packages/core/agent-loop/src/index.ts` +150-300
+Creation is four jobs: open the log, build the driver, run setup, announce the birth. Any step that fails rolls back cleanly, never leaving a half-built Agent:
 
-### 步骤分解
+**Entry**: `ctx.agents.create(options)`. **Source**: `packages/core/agent/src/index.ts` create/enter/announce, `packages/core/agent-loop/src/index.ts` create/createAgent/initializeAgent
+
+### Step breakdown
 
 ```
 1. 验证 FiberState
@@ -52,44 +59,45 @@
    const sessionId = SessionId(randomUUID())
 
 3. 创建 Session
-   const session = ctx.sessions.create(sessionId, { meta, seed, inheritedEventCount })
+   const session = ctx.sessions.prepare(sessionId, { meta, ... })
      → 触发 session/created 事件
 
 4. 创建 ReactLoopAgent
-   const agent = new ReactLoopAgent(ctx, sessionId, agentOptions, session)
+   const agent = new ReactLoopAgent(loopCtx, sessionId, options, session, projections, lastTurn)
 
 5. 执行 setup 回调（如有）
    await setup(agentCtx, agent)
      → agentCtx 是 agent.scope.ctx，仅在此 Agent 作用域内生效
      → 可注册 tool、prompt section、listener 等
 
-6. 注册到 AgentRegistry
-   await registry.enter(agent)
-     → 等待所有 agent/created 监听器 settle（serial）
+6. 进入注册表
+   const detach = registry.enter(agent, owner)
 
 7. 发布 agent/created 事件
-   dispatch.emit('agent/created', { agent })
+   await registry.announce(agent, source)
+     → serial dispatch，监听器失败会拒绝创建
 
 8. 返回 AgentHandle
-   return { agent, dispose: handleDispose.bind(null, agent) }
+   return { agent, dispose: () => teardown() }
 ```
 
-### 回滚保证
+### Rollback guarantees
 
-如果步骤 5（setup）或步骤 6（enter）失败：
-- Session 被 close
-- Scope 被 unwind
-- 所有 setup 期间注册的 effect 被清理
-- 不触发 agent/created（因为 enter 尚未完成）
+If the setup callback or registration fails, the system cleans the scene as if nothing had happened:
+- the session is closed
+- the scope is unwound
+- every effect registered during setup is disposed
+- `agent/created` is not announced (announce never ran to completion)
 
 ---
 
-## 阶段 2：驱动（Drive）
+## Phase 2: Drive
 
-**入口**：`ReactLoopAgent` 内部的状态机循环  
-**源码位置**：`packages/core/agent-loop/src/agent.ts` +98（类声明）、+298（turn）、+400（step）
+Driving is the Agent's "heartbeat": standing by (idle) when there is no work, working (running) when there is, with a preparation gear (maintenance) in between. Once you know the three phases and the wake mechanism, the main loop reads itself:
 
-### 相位（Phase）类型
+**Entry**: the `ReactLoopAgent` state machine loop. **Source**: `packages/core/agent-loop/src/agent.ts` +112 (class), +268 (kick), +327 (turn), +435 (step)
+
+### The Phase type
 
 ```ts
 type Phase =
@@ -102,7 +110,9 @@ type Phase =
 - `maintenance`：准备阶段（AbortController 已创建但未开始 Turn）
 - `running`：正在执行 Turn/Step
 
-### 唤醒机制
+The three message entry points map to three delivery targets: `followup` delivers to the next turn, `steer` slips into the next step, `inject` stores without waking.
+
+### Wake mechanism
 
 ```
 followup(message)  →  Inbox.append(message, target='next-turn')
@@ -113,7 +123,9 @@ inject(context)    →  Inbox.append(message, target='next-step', wake=false)
 当 phase != idle 时，wakeRequested = true，下次循环边界会检查
 ```
 
-### 主循环伪代码
+### Driver loop in pseudocode
+
+把三个相位串起来，主循环其实只有三种状态各做一件事：
 
 ```ts
 async function drive() {
@@ -140,12 +152,13 @@ async function drive() {
 
 ---
 
-## 阶段 3：取消（Cancel）
+## Phase 3: Cancel
 
-**入口**：`handle.agent.cancel(cause, options?)`  
-**源码位置**：`packages/core/agent/src/types.ts` +cancel、`packages/core/agent-loop/src/agent.ts` +cancel
+Cancellation has four causes but one path: raise the abort signal → clear the Inbox (optional) → wait for current activity to wind down. Everything already produced (such as streamed text) is always kept:
 
-### Cancel 语义
+**Entry**: `handle.agent.cancel(cause, options?)`. **Source**: `packages/core/agent-loop/src/agent.ts` cancel, `packages/core/session/src/types.ts` +194 (AgentCancelCause)
+
+### Cancel semantics
 
 ```ts
 interface AgentCancelCause {
@@ -157,9 +170,11 @@ interface AgentCancelCause {
 - `'user'`：用户主动取消（如点击停止按钮），保留 Inbox 中的 pending 消息
 - `'parent'`：父 Agent 取消（子 Agent 被回收）
 - `'disposed'`：AgentHandle 被 dispose
-- `'hook'`：agent/turn-stopping 监听器触发的取消
+- `'hook'`：`agent/turn-stopping` 监听器触发的取消
 
-### Cancel 执行路径
+### Cancel execution path
+
+取消永远走同一条路：中止信号 → 清 Inbox（可选）→ 等收尾：
 
 ```
 cancel(cause, { keepInbox? })
@@ -179,55 +194,59 @@ cancel(cause, { keepInbox? })
 
 ---
 
-## 阶段 4：销毁（Dispose）
+## Phase 4: Dispose
 
-**入口**：`handle.dispose()`  
-**源码位置**：`packages/core/agent/src/index.ts` +dispose、`packages/core/agent-loop/src/index.ts` +dispose
+Disposal follows a strict order: stop the loop first, unwind the scope next, close the log last. Out-of-order disposal fails loudly — the order guarantees a complete log and no missed cleanup:
 
-### Dispose 步骤
+**Entry**: `handle.dispose()`. **Source**: `packages/core/agent/src/index.ts` enter/detach, `packages/core/agent-loop/src/index.ts` +500-545
+
+### Dispose steps
+
+六步依次执行，每步都在为下一步铺路：
 
 ```
-1. agent.cancel({ kind: 'disposed' })
+1. agent.cancel({ kind: 'disposed' }, { keepInbox: !ready })
    → 停止正在运行的 Turn/Step
 
 2. await agent.whenIdle()
    → 等待当前 Turn 完全结束（包括已排队的后续操作）
 
-3. registry.detach(agent)
-   → 从 AgentRegistry 中移除
-   → 等待所有监听器 settle
-
-4. scope.dispose()
+3. machine.scope.dispose()
    → 解开此 Agent 的所有 scoped registration
    → 触发的 disposer 按逆序执行
 
-5. session.close()
-   → 关闭 Session 的写入路径
+4. registry detach
+   → 从 AgentRegistry 中移除
+   → 触发 agent/disposed（emit，监听器失败被包含）
+
+5. session detach + stored handle close
    → 触发 session/disposed 事件
-   → persistence 后端收到 flush + retire
+   → persistence 后端收到 close（close 前 drain）
 
 6. 释放 AgentHandle
    → id 可被重新使用（新 create 可用相同 id）
 ```
 
-### Dispose 顺序保证
+### Dispose ordering guarantees
 
-Dispose 顺序是严格定义的，违反顺序会报错：
-1. **先停 Loop**：确保不会再有新的 Session append
-2. **再解 Scope**：确保不会再有新的 effect 注册
-3. **最后关 Session**：确保所有事件已处理完毕
+Why this order? Each step closes off one class of "something can still write here":
+1. **Stop the loop first**: no further Session appends
+2. **Unwind the scope next**: no further effect registration
+3. **Close the session last**: all events have been processed
 
 ---
 
-## 关键源码定位
+## Key source map
 
-| 操作 | 源码文件 | 关键行范围 |
+When you want to jump straight into the source, this table goes from operation to file and method:
+
+| 操作 | 源码文件 | 关键部分 |
 |---|---|---|
-| `create()` | `packages/core/agent/src/index.ts` | +100-250 |
-| `resume()` | `packages/core/agent/src/index.ts` | +250-400 |
-| `cancel()` | `packages/core/agent/src/types.ts` | cancel 方法 |
-| `dispose()` | `packages/core/agent/src/index.ts` | +dispose |
-| Phase 状态机 | `packages/core/agent-loop/src/agent.ts` | +60-100（Phase 类型）+298-399（turn） |
-| `turn()` | `packages/core/agent-loop/src/agent.ts` | +298-399 |
-| `step()` | `packages/core/agent-loop/src/agent.ts` | +400-560 |
-| `whenIdle()` | `packages/core/agent/src/types.ts` | whenIdle 方法 |
+| `create()` | `packages/core/agent/src/index.ts` | create/enter/announce |
+| `resume()` | `packages/core/agent/src/index.ts` | resume |
+| `cancel()` | `packages/core/agent-loop/src/agent.ts` | cancel 方法 |
+| `dispose()` | `packages/core/agent-loop/src/index.ts` | +500-545 |
+| Phase 状态机 | `packages/core/agent-loop/src/agent.ts` | +53-61（Phase 类型）+327（turn） |
+| `turn()` | `packages/core/agent-loop/src/agent.ts` | +327 |
+| `step()` | `packages/core/agent-loop/src/agent.ts` | +435 |
+| `whenIdle()` | `packages/core/agent-loop/src/agent.ts` | whenIdle 方法 |

@@ -1,45 +1,50 @@
-# tools 包源码逐函数解析
+# tools package reference
 
-## 模块概览
+English | [中文](02-tools.zh.md)
 
-**源码目录**：`packages/core/tools/src/`
+tools 包管两件事：工具的"花名册"（注册、限制、查找）和"安检流水线"（单次调用的五阶段管线、批量调度）。这一篇按文件拆开，重点讲 ToolsService 的方法和 defineTool DSL 的编译过程。
+
+## Module overview
+
+九个文件：主服务、契约、DSL、管线、批调度、执行器、事件、Schema 验证、UI 呈现：
+
+**Source directory**: `packages/core/tools/src/`
 
 | 文件 | 职责 | 行数 |
 |---|---|---|
-| `index.ts` | ToolRuntime Service、执行管线、注册表 | ~2000+ |
-| `schema.ts` | defineTool DSL、ValueSchemaSpec、InferValue | ~300 |
-| `types.ts` | ToolDefinition、ToolExecutionResult、决策类型 | ~400 |
+| `index.ts` | ToolsService、注册表、执行入口 | ~412 |
+| `contracts.ts` | ToolDefinition、ToolExecution、决策类型 | ~700 |
+| `schema.ts` | defineTool DSL、ValueSchemaSpec、projectToolSchema | ~700 |
+| `pipeline.ts` | ToolExecutionPipeline：单次调用 5 阶段管线 | ~700 |
+| `batch.ts` | executeToolBatch：分组 + 有界并发池 | ~300 |
+| `executor.ts` | ToolExecutor 契约 + ToolBatchInput/Result | ~100 |
+| `events.ts` | tools/* 事件声明 | ~60 |
 | `json-schema.ts` | JSON Schema 子集定义 + 验证 | ~200 |
 | `presentation.ts` | ToolCallView / ToolResultView UI 呈现类型 | ~150 |
-| `ptc.ts` | PTC 模式：run_code 工具 + SDK 生成 | ~300 |
 
 ---
 
-## index.ts — ToolRuntime Service
+## index.ts — the ToolsService
 
-### Service 声明（+1-100）
+### Service declaration (+1-100)
 
 ```ts
 declare module '@deepseek-ai/cordis' {
-  interface Context { tools: ToolRuntime }
-  interface Events {
-    'tools/pre-execute'(exec: ToolExecution, next: () => Promise<PreToolDecision>): Promise<PreToolDecision>
-    'tools/execute'(exec: ToolDispatchExecution, next: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult>
-    'tools/post-execute'(exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision>
-    'tools/result'(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined
-    'tools/change'(): void
-  }
+  interface Context { tools: ToolsService }
 }
 ```
 
-### ToolLayer 类（+250-350）
+`ToolsService extends Service`：构造时 `super(ctx, 'tools')`，`static inject = ['systemPrompt']`（注册工具 schema provider）。别名导出 `ToolRuntime`。执行器由 `setExecutor()` 挂载（`tool-executor-native` / `tool-executor-ptc`）。
+
+### The ToolLayer class (+63-100)
+
+每层作用域一个 ToolLayer，装着该层的工具、限制和守卫：
 
 ```ts
 class ToolLayer implements ScopeLayer {
   readonly tools: NamedEntries<ToolDefinition>
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
   readonly guards = new AnonymousEntries<ToolGuard>()
-  mode: ToolPresentationMode | undefined
 
   isEmpty(): boolean
   admits(name: string): boolean        // 检查所有限制是否允许此工具名
@@ -47,7 +52,9 @@ class ToolLayer implements ScopeLayer {
 }
 ```
 
-### ToolView 接口（+350-400）
+### The ToolView interface (+54)
+
+给模型看的"工具橱窗"：可见的、注册过的、可被限制的三个视图分开维护：
 
 ```ts
 interface ToolView {
@@ -59,148 +66,121 @@ interface ToolView {
 
 ---
 
-## ToolRuntime 类方法
+## ToolsService methods
 
-### `register(def, scope?)`（tools/index.ts +1071）
+### `register(def, options?)` (index.ts +128)
+
+注册工具的六步：验证输出、验证参数 Schema、预留名、入层、广播、返回卸载器：
 
 ```ts
-register(def: ToolDefinition, scope?: Scope): Disposer
+register(definition: ToolDefinition, options?: ToolRegistrationOptions): () => void
 ```
 
 **执行步骤**：
-1. 验证 `def.name` 未被同 scope 重复注册
-2. 验证 `def.output.schema` 是合法 JSON Schema
-3. 将 def 加入当前层的 `tools` 表
-4. 触发 `tools/change` 事件（无 veto，失败仅 warn）
-5. 返回 disposer，卸载时移除 def 并再次触发 `tools/change`
+1. 验证 `def.output` 的 schema/render 与 `timeoutMs`
+2. `assertSupportedJsonSchema(def.parameters)`
+3. 预留 `run_code` 名称（PTC 专用）
+4. 将 def 加入当前层的 `tools` 表
+5. 触发 `tools/change` 事件（无 veto，失败仅 warn）
+6. 返回 disposer，卸载时移除 def 并再次触发 `tools/change`
 
-### `restrict(filter, scope?)`（+580-640）
+`ToolRegistrationOptions.when`：条件可见性，Step 准入时通过 `resolve()` 求值。
+
+### `restrict(filter)` (+162)
+
+限制可见工具，语义是"多层取交集"：
 
 ```ts
-restrict(filter: ToolRestriction, scope?: Scope): Disposer
+restrict(filter: ToolRestriction): () => void
 ```
 
 **语义**：
 - `allow` 白名单：只保留指定名称
 - `deny` 黑名单：排除指定名称
 - 多层 restriction 取交集
-- scoped 注册的工具不受 global restriction 影响
+- 需要 scoped ctx；拒绝空 filter 与 `run_code`
 
-### `schemas(scope?)`（+640-680）
+### `schemas(scope?, toolSet?)` (+316)
 
-```ts
-schemas(scope?: Scope): ToolSchema[]
-```
-
-**返回**：仅模型可见字段（`name`、`description`、`parameters`）。`output`、`execute`、`projectContent` 等绝不泄露。
-
-### `executionMode(exec)`（+680-700）
+给模型的工具 Schema 走白名单投影，内部字段（execute、output 等）绝不外泄：
 
 ```ts
-executionMode(exec: ToolExecutionInput): ToolExecutionMode
+schemas(scope?: Scope, toolSet?: ResolvedToolSet): ToolSchema[]
 ```
 
-调用 `def.isConcurrencySafe?.(exec.arguments)` 判断是否可并行。
+**返回**：仅模型可见字段（`name`、`description`、`parameters`）。`output`、`execute`、`projectContent` 等绝不泄露（`projectToolSchema` 白名单）。
 
-### `execute(name, input)`（tools/index.ts +1377）— 核心执行管线
+### `execute(input)` (+375) — the execution entry
 
 ```ts
-async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
+async execute(input: ToolBatchInput): Promise<ToolBatchResult>
 ```
 
-**完整流程**：
+委托给本作用域的 executor；一次 Step 的全部 tool calls 作为一个批次。完整管线见 [03-tool-execution.md](../03-detailed/03-tool-execution.md)。
 
 ```
 1. 查找 ToolDefinition
-   const def = this.resolve(name, input.agent?.ctx)
+   const def = this.resolve(name, scope, toolSet)
    if (!def) throw new ToolNotFoundError(name)
 
 2. 快照并冻结 arguments
-   const frozenArgs = snapshotToolValue(name, input.arguments)
+   const frozenArgs = snapshotJsonValue(input.arguments)
 
-3. 构建 ToolExecution（添加 token）
-   const exec: ToolExecution = { ...input, arguments: frozenArgs, token, rootCallId }
+3. 构建 ToolExecution（添加 token / rootCallId）
 
 4. tools/pre-execute waterfall
-   const preDecision = await this.dispatchWaterfall('tools/pre-execute', exec)
-   switch (preDecision.kind):
-     - 'allow' → continue
-     - 'deny' → return { isError: true, content, error: { info } }
-     - 'cancel' → return canonical cancel result
-     - 'ask' → 等待 approval service（超时/拒绝 → deny）
+   → 'allow' 继续；'deny' 返回 error result；'cancel' 返回取消结果
+   → 'ask' 等待 approval service（超时/拒绝 → deny）
 
 5. 单调守卫检查
-   for (const layer of layers) {
-     const reason = layer.guardReason(exec)
-     if (reason) return deny(result)
-   }
+   const reason = service.checkGuards(exec)
+   if (reason) return deny(result)
 
 6. tools/execute waterfall
-   const preparedSignal = fuseCallerSignal(input.signal, exec.signal)
-   const dispatchExec: ToolDispatchExecution = { ...exec, signal: preparedSignal }
-   const innerResult = await this.dispatchWaterfall('tools/execute', dispatchExec)
-     → 默认 next() 调用：
-         const value = await def.execute(exec.arguments, runContext)
-         → 验证 value 符合 output.schema
-         → render: output.render(exec.arguments, value)
-         → 返回 { isError: false, value, content, meta }
+   → 默认 next() 调用 def.execute(exec.arguments, runContext)
+   → 验证 value 符合 output.schema，render 为 ContentBlock[]
 
 7. tools/post-execute waterfall
-   const postDecision = await this.dispatchWaterfall('tools/post-execute', exec, innerResult)
-   → 'accept': 使用 listener 提供的 content/value
-   → 'block': 转为 error result
+   → 'accept' 使用 listener 结果；'block' 转为 error result
 
-8. finalizeContent（工具自定义）
-   const finalContent = def.finalizeContent
-     ? def.finalizeContent(exec, finalResult)
-     : finalResult.content
+8. finalizeContent（工具自定义最后转换）
 
 9. 触发 tools/result（observe-only）
-   this.dispatch.emit('tools/result', freeze(exec), freeze(finalResult))
 
 10. 返回 finalResult
 ```
 
-### `get(name, scope?)`（+900-920）
+### `get(name, scope?, toolSet?)` (+239)
+
+按 scope 查找定义（用于内部查找，非模型路径）：
 
 ```ts
-get(name: string, scope?: Scope): ToolDefinition | undefined
+get(name: string, scope?: Scope, toolSet?: ResolvedToolSet): ToolDefinition | undefined
 ```
 
 按 scope 查找定义（用于内部查找，非模型路径）。
 
 ---
 
-## schema.ts — defineTool DSL
+## schema.ts — the defineTool DSL
 
-### `defineTool(options)`（+1-100）
+### `defineTool(options)` (+555)
+
+四步把声明式 DSL 编译成完整 ToolDefinition，类型推断一路保留：
 
 ```ts
-function defineTool<T extends DefineToolOptions>(options: T): ToolDefinition & InferValue<T['output']['schema']>
+function defineTool<const S extends ParameterSchemaSpec, const O extends ValueSchemaSpec>(
+  options: DefineToolOptions<S, O>,
+): ToolDefinition & InferValue<S> & InferOutput<O>
 ```
 
 **构建步骤**：
 1. 验证 `options.name` 非空
 2. 编译 `options.parameters` → JSON Schema（`parameterSchemaSpecToJsonSchema`）
 3. 验证 `options.output.schema` 是合法 JSON Schema
-4. 返回合并的 ToolDefinition：
-   ```ts
-   {
-     name: options.name,
-     description: options.description,
-     parameters: compiledParams,
-     output: options.output,
-     execute: options.execute,
-     projectContent: options.projectContent,
-     finalizeContent: options.finalizeContent,
-     timeoutMs: options.timeoutMs,
-     isConcurrencySafe: options.isConcurrencySafe,
-     presentCall: options.presentCall,
-     presentResult: options.presentResult,
-   }
-   ```
+4. 返回合并的 ToolDefinition（保持参数与输出的类型推断）
 
-### `valueSchemaSpecToJsonSchema(spec)`（+100-200）
+### `valueSchemaSpecToJsonSchema(spec)`
 
 将 `ValueSchemaSpec` 转换为 JSON Schema Node：
 - `{ type: 'string' }` → `{ type: 'string' }`
@@ -208,35 +188,26 @@ function defineTool<T extends DefineToolOptions>(options: T): ToolDefinition & I
 - `{ oneOf: [...] }` → `{ oneOf: [compiled] }`
 - `{ type: 'json' }` → `{}` (annotation-only, unconstrained)
 
-### `validateArgs(def, rawArgs)`（+200-250）
+### `projectToolSchema(definition, detachParameters)` (+641)
 
-```ts
-function validateArgs(def: ToolDefinition, rawArgs: unknown): unknown
-```
-
-使用 `jsonSchemaToZod(def.parameters)` 生成 Zod schema，然后 `.parse(rawArgs)`。失败抛出 `ToolArgsError`。
+白名单投影：只保留 `{ name, description, parameters, deferLoading? }`，丢弃 `output`/`execute`/presentation 回调；`detachParameters` 时对 parameters 做快照脱离（非 lossless JSON 时抛错）。
 
 ---
 
-## 关键错误类型
+## Key error types
+
+三类错误对应三种失败，排查时按 code 定位：
 
 | 类 | code | 触发条件 |
 |---|---|---|
 | `ToolNotFoundError` | `UNKNOWN_TOOL` | 工具名未注册 |
 | `ToolOutputError` | `INVALID_TOOL_OUTPUT` | 返回值不符合 output.schema |
-| `ToolArgsError` | — | 参数不符合 parameter schema |
+| `ToolActivationError` | — | Step 准入时工具不可激活 |
 
 ---
 
-## PTC 模式相关（ptc.ts）
+## PTC mode notes
 
-### `createRunCodeTool(ptcRuntime)`（+1-100）
+PTC（可编程工具调用）是另一条执行路径：模型写代码，代码内部再调度工具。`run_code` 是保留名，内部调用的 Schema 不落日志。
 
-生成 `run_code` 工具的定义，包含：
-- 工具 Schema（program: string, language: string）
-- execute 函数：调用 `ctx.ptcRuntime.run(program, language, signal)`
-- output.render：将 PTC 结果转为 TextBlock
-
-### `RUN_CODE_ONLY_INSTRUCTION`（+ptc.ts 常量）
-
-PTC 模式下注入系统提示词的指令文本，告知模型只能通过 `run_code` 间接调用其他工具。
+PTC 模式（`run_code` 工具 + 内部调度）由 `packages/core/tool-executor-ptc/` 实现：`RUN_CODE_NAME = 'run_code'`（contracts.ts +12）为保留名，注册表拒绝其他工具占用；PTC 执行器把内部 tool calls 作为子调度运行，schema 仅在绑定时刻传入（`ToolExecutionInput.schema`，从不落日志）。

@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/README.md
+/deepseek-harness-source-reading-guide:
+  en: d2f9797780437a06
+  zh: f29ff07dff8d6920
+/deepseek-harness-source-reading-guide/document-layers:
+  en: 19f7933075f108ed
+  zh: ef344a3e2e8402eb
+/deepseek-harness-source-reading-guide/directory-layout:
+  en: 9bd3cf5ee673b632
+  zh: 98cabc994f1cc32c
+/deepseek-harness-source-reading-guide/quick-navigation:
+  en: 7c2f519ad3f41125
+  zh: e11bbbf0f91fd9a5
+/deepseek-harness-source-reading-guide/quick-navigation/i-want-to-know-what-this-project-does:
+  en: dec543d70cc63354
+  zh: 85f08b68ff3e3938
+/deepseek-harness-source-reading-guide/quick-navigation/i-want-to-see-how-a-request-flows-from-entry-to-result:
+  en: c90ddf9668cc3120
+  zh: de6e1dcc9dbc4487
+/deepseek-harness-source-reading-guide/quick-navigation/i-want-to-understand-how-an-agent-runs-one-conversation-round:
+  en: 9bffedaae39f4b2c
+  zh: 545733463d828107
+/deepseek-harness-source-reading-guide/quick-navigation/i-want-to-change-the-agent-loop-logic:
+  en: 3230af4a825dda99
+  zh: bb4d92136b95ce75
+/deepseek-harness-source-reading-guide/quick-navigation/i-want-to-understand-session-persistence:
+  en: b7366487654984fd
+  zh: 76e0f999992d3dcf
+/deepseek-harness-source-reading-guide/quick-navigation/i-want-to-add-a-new-tool:
+  en: f8e0bde2c12cd70e
+  zh: cbb96903fd1842c9
+/deepseek-harness-source-reading-guide/core-terminology:
+  en: 92e8dd52ae819708
+  zh: ea6e0af14b1444d5

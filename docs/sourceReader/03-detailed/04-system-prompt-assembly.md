@@ -1,6 +1,10 @@
-# 系统提示词组装过程
+# System prompt assembly
 
-## 提示词组装的整体架构
+English | [中文](04-system-prompt-assembly.zh.md)
+
+每次问模型之前，系统都要重新拼一份完整的系统提示词：身份、策略、工具说明、运行时上下文，一段都不能少。这一页讲清这份提示词是怎么"分层组装、按序渲染、支持中途替换"的，末尾附源码定位表。
+
+## The assembly architecture
 
 系统提示词不是单一字符串，而是由多个 **PromptSection** 有序拼接而成。每个 Section 可以来自：
 - 静态配置（Bundle 内联）
@@ -8,91 +12,99 @@
 - 工具 Schema（自动注入）
 - 运行时上下文（工作区指令、时间等）
 
+可以把它想成一份"每日简报"：固定栏目按版面顺序排好，动态栏目每期重新采写，最后总编（waterfall）审一遍才能发布：
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                 PromptAssembly 流程                           │
 │                                                              │
-│  systemPrompt.assemble(agentCtx)                             │
+│  systemPrompt.assemble(context)                              │
 │       │                                                      │
 │       ├─► 1. 收集所有 PromptSection                          │
-│       │     ctx.systemPrompt.getSections(agentCtx)           │
-│       │     → 按注册顺序排列                                 │
+│       │     按注册的 order 升序排列（相同 order 按名称）      │
 │       │                                                      │
 │       ├─► 2. 注入当前工具 Schema                              │
-│       │     ctx.tools.schemas(agentCtx)                      │
-│       │     → 编译为 JSON Schema 字符串                      │
-│       │     → 追加到 system prompt 的工具说明区域            │
+│       │     ctx.tools 注册的 tools provider                  │
+│       │     → projectToolSchema 只保留模型可见字段            │
 │       │                                                      │
 │       ├─► 3. 渲染各 Section                                   │
-│       │     renderPrompt(sections, tools)                    │
-│       │     → 每个 section.render(ctx) 生成文本片段          │
-│       │     → 拼接为完整 systemText                          │
+│       │     renderPrompt(assembly)                           │
+│       │     → 静态文本或 provider(context) 生成文本片段       │
+│       │     → {{variable}} 插值后拼接为完整文本               │
 │       │                                                      │
-│       ├─► 4. 生成 PromptAssembly 结果                        │
-│       │     {                                                │
-│       │       systemText,         // 完整系统提示词文本       │
-│       │       toolSchemas,        // 工具 Schema 数组        │
-│       │       contextSections,    // 运行时上下文章节         │
-│       │       variables           // 变量替换映射            │
-│       │     }                                                │
-│       └─► 5. 触发 system/prompt-assembled 事件               │
-│                                                                           
+│       ├─► 4. 触发 system-prompt/assemble waterfall           │
+│       │     → 监听器可改写最终呈现                            │
+│       │     → 完整 section（complete: true）随后恢复          │
+│       │                                                      │
+│       └─► 5. 返回 PromptAssembly                             │
+│             {                                                │
+│               sections,      // 已命名的 PromptSection 列表  │
+│               contexts,      // 运行时上下文章节              │
+│               variables,     // 变量替换映射                  │
+│               tools,         // 工具 Schema 数组              │
+│             }                                                │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## PromptSection 类型
+## The PromptSection type
 
-**源码位置**：`packages/core/system-prompt/src/types.ts`
+一个 Section 就是一条"固定栏目"：有名字（防重复）、有次序（order 决定位置）、有内容（静态文本或动态 provider）：
+
+**Source**: `packages/core/system-prompt/src/index.ts` +53
 
 ```ts
 interface PromptSection {
-  /** 唯一标识，用于替换操作 */
-  id: string
+  /** 唯一标识，重复注册会抛错 */
+  name: string
   /** 渲染优先级（数字越小越靠前） */
-  priority: number
-  /** 是否可被替换 */
-  replaceable: boolean
-  /** 渲染函数 */
-  render(ctx: PromptRenderContext): string | undefined
+  order: number
+  /** 静态文本或每次组装时求值的 provider */
+  text: string | ((context: AssembleContext) => string)
+  /** 是否插值 prompt 变量；默认 true，false 保留字面文本 */
+  interpolate?: boolean
+  /** 视为完整系统提示词；多于一个生效的 complete section 会组装失败 */
+  complete?: boolean
 }
 ```
 
-### 内置 PromptSection 类型
+### Built-in section positions (SECTION_ORDERS)
 
-| Section 类型 | 来源 | 职责 |
+| Section | order | 职责 |
 |---|---|---|
-| `static` | Bundle 配置 | 固定文本章节 |
-| `tool-schema` | ctx.tools.schemas() | 当前可见工具列表 |
-| `workspace` | workspace 包 | 工作区 AGENTS.md 等内容 |
-| `time-context` | context 包 | 当前时间、时区 |
-| `skill` | skill 包 | 激活的 Skill 内容 |
-| `goal` | goal 包 | 当前目标描述 |
-| `variable` | 用户变量 | 变量替换 |
+| `HARNESS_IDENTITY` | -1000 | 身份标识（可配置关闭） |
+| `DEPLOYMENT_PERSONA_PREFIX` | 0 | 部署 persona 前缀 |
+| `PLAN_POLICY` / `TEAM_POLICY` | 500/600 | 计划与团队协作策略 |
+| `PTC_ONLY` | 800 | PTC 模式说明 |
+| `TOOL_*` | 1000-3000 | 各内置工具的使用说明 |
+| `MCP_SERVERS` | 3100 | 外部 MCP 服务器 |
+| `TOOLS_SDK` | 5000 | SDK 工具说明 |
+| `STRUCTURED_OUTPUT` | 9900 | 结构化输出 |
+| `HARNESS_SOURCE` / `WEB_SURFACE` | 10000+ | 本地路径与端点 |
+| `DEPLOYMENT_PERSONA_SUFFIX` | 10200 | 部署 persona 后缀 |
 
 ---
 
-## 组装过程中的关键决策
+## Key decisions during assembly
 
-### 1. 工具 Schema 注入
+组装里有三个容易踩坑的位置，逐个说明：
+
+### 1. Tool schema injection
 
 工具 Schema 在每次 Step 开始前重新组装，因为工具的可见性可能因 Agent preset 而变化。
 
 ```ts
 // packages/core/system-prompt/src/index.ts
-async function assembleToolSchema(agentCtx: Context): Promise<string> {
-  const schemas = ctx.tools.schemas(agentCtx)
-  if (schemas.length === 0) return ''
-  return `## Available Tools\n\n${schemas.map(s =>
-    jsonSchemaToDescription(s)
-  ).join('\n\n')}`
-}
+tools(provider: (context: AssembleContext) => ToolProviderResult): () => void
+// tools 包在构造时注册 provider：
+ctx.systemPrompt.tools(({ scope, toolSet }) => ({ ...executor.describe(...), knownNames }))
+// projectToolSchema 只保留 { name, description, parameters, deferLoading? }
 ```
 
-### 2. System Message 在 Session 中的表示
+### 2. The system message in the Session
 
-第一次组装的 system prompt 以 `system/message` 事件写入 Session：
+拼好的提示词去哪里？第一次写入 Session 作为 node 0；之后工具变了就"替换"这个节点，而不是追加新消息——这保证了模型历史里始终只有一份最新系统提示词：
 
 ```ts
 // 首次：写入 surface node 0
@@ -108,22 +120,24 @@ session.append('system/message', {
 }, { surfaceOp: { op: 'replace', startSeq: lastSysSeq, endSeq: lastSysSeq } })
 ```
 
-### 3. In-history vs Head 更新模式
+### 3. In-history vs head update modes
 
-不同 LLM Provider 对 system prompt 的支持方式不同：
+不同模型对系统提示词的支持方式不同：有的允许它在历史任意位置，有的只认开头一条。系统按模型能力选择更新策略：
 
 | `systemPromptUpdate` 模式 | 含义 | 适用 Provider |
 |---|---|---|
-| `'in-history'` | system 消息可出现在对话历史任意位置 | DeepSeek 某些模型 |
-| `'head-only'` | system 消息只在对话头部 | 大多数 OpenAI 兼容 API |
+| `'in-history'` | system 消息可出现在对话历史任意位置 | 支持该能力的模型 |
+| 缺省 | system 消息只在对话头部 | 大多数 OpenAI 兼容 API |
 
-**源码位置**：`packages/llm/llm/src/types.ts` +LlmResolvedModelInfo
+**Source**: `packages/llm/llm/src/types.ts` LlmResolvedModelInfo
 
 ---
 
-## System Prompt 替换语义
+## System prompt replacement semantics
 
-**源码位置**：`packages/core/session/src/surface.ts` +system-message-replacement
+系统提示词在 Session 里是一个"表面节点"（surface node），有严格的替换规则。核心思想：node 0（第一次的提示词）受保护，后续节点可以替换或清空：
+
+**Source**: `packages/core/session/src/surface.ts` assertSystemHeadRewrite
 
 ```
 System prompt 在 Session 中是一个 "surface node"（表面节点）。
@@ -149,39 +163,39 @@ System prompt 在 Session 中是一个 "surface node"（表面节点）。
 
 ---
 
-## 运行时上下文注入
+## Runtime context injection
 
-**源码位置**：`packages/core/agent-loop/src/runtime-context.ts`
+除了系统提示词，每个 Step 开始前还会刷新一份"当下事实快照"（工作目录、时间、沙箱策略等），以 durable user-role 消息写进日志：
+
+**Source**: `packages/core/agent-loop/src/runtime-context.ts`
 
 Agent Loop 在每个 Step 开始前刷新运行时上下文：
 
 ```ts
 class RuntimeContextProjection {
   // 维护 per-step 的运行时事实快照
-  async refresh(agentCtx: Context, session: Session): Promise<void> {
-    const facts = await collectRuntimeFacts(agentCtx)
-      // 包括：cwd、激活的 skill、当前 goal、时间等
+  project(joined: string, sections: readonly ContextSnapshotSection[]): UserMessage | undefined {
+    // 收集：工作目录、沙箱策略、审批策略、时间等上下文章节
 
-    // 以 developer/message 形式写入 Session
-    session.append('developer/message', {
-      turn, step,
-      message: {
-        content: [{ type: 'text', text: formatFacts(facts) }],
-      },
-    }, { surfaceOp: { op: 'append' } })
+    // 以 durable 的 user-role 快照写入 Session
+    session.append('user/message', message, { surfaceOp: { op: 'append' } })
   }
 }
 ```
 
+SystemPromptProjection 决定 `system/message` 的提交：它按 `renderPrompt(assembly)` 与 capability flags（`inHistory`、`startsSeries`、工具变化）产出 `SystemPromptCommit[]`，由 Step 循环逐个 append。
+
 ---
 
-## 关键源码定位
+## Key source map
 
-| 功能 | 源码文件 | 关键行 |
+想直接跳进源码时用这张表，按功能直达文件和行号：
+
+| 功能 | 源码文件 | 关键部分 |
 |---|---|---|
-| PromptSection 类型 | `packages/core/system-prompt/src/types.ts` | +1-全 |
-| assemble() 主逻辑 | `packages/core/system-prompt/src/index.ts` | +assemble |
-| 工具 Schema 注入 | `packages/core/system-prompt/src/index.ts` | +tools |
-| System message 节点管理 | `packages/core/session/src/surface.ts` | +system |
-| Runtime context 刷新 | `packages/core/agent-loop/src/runtime-context.ts` | +1-164 |
-| Provider system prompt 模式 | `packages/llm/llm/src/types.ts` | +LlmResolvedModelInfo |
+| PromptSection 类型 | `packages/core/system-prompt/src/index.ts` | +53 |
+| assemble() 主逻辑 | `packages/core/system-prompt/src/index.ts` | assemble (+621) |
+| 工具 Schema 注入 | `packages/core/system-prompt/src/index.ts` | tools (+552) |
+| System message 节点管理 | `packages/core/session/src/surface.ts` | assertSystemHeadRewrite (+493) |
+| Runtime context 刷新 | `packages/core/agent-loop/src/runtime-context.ts` | +1-169 |
+| Provider system prompt 模式 | `packages/llm/llm/src/types.ts` | LlmResolvedModelInfo |

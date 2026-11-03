@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for 00-minimal-example.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/02-example/00-minimal-example.md
+/minimal-runnable-example-one-headless-task:
+  en: b5594a91ab56bfaf
+  zh: 4d01f5f7f49867ef
+/minimal-runnable-example-one-headless-task/scenario:
+  en: 803287a85ce7358b
+  zh: 5a355ffb75240b00
+/minimal-runnable-example-one-headless-task/full-path-trace:
+  en: 007638cbd5776d73
+  zh: 58bfe51037b8fd71
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-1-cli-entry-argument-parsing:
+  en: 98a1d90b0b46e5d0
+  zh: 3e1a8fa233a0a4a6
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-2-profile-boot-load-configuration:
+  en: 0d0f06b0708de4c7
+  zh: eb98e79272321b0c
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-3-cordis-loader-mount-the-plugin-tree:
+  en: 407f18e3d3294cf9
+  zh: 9b05b8a83c0d2277
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-4-headless-runner-create-the-agent:
+  en: 0063fbfec47ddaed
+  zh: b68483fd258dfb64
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-5-agent-loop-starts-driving:
+  en: 56356ca7a22f9226
+  zh: 1a5218cae2bcbcad
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-6-turn-starts-prompt-assembly:
+  en: a149ecc94185842a
+  zh: f691e4421faf8abb
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-7-llm-streaming-call:
+  en: 93af78ecdb4b1005
+  zh: 50ef0a4158cbc853
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-8-tool-execution:
+  en: d7dfe180b919209a
+  zh: ad95027bcec3cce4
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-9-second-step-the-model-continues-on-tool-results:
+  en: 88df46bfaef2409a
+  zh: f1cdaf250940d453
+/minimal-runnable-example-one-headless-task/full-path-trace/hop-10-turn-end-cleanup:
+  en: be056d208d2f316a
+  zh: c06e63dc22f1b2a2
+/minimal-runnable-example-one-headless-task/full-sequence-diagram-mermaid:
+  en: 166f21d161950432
+  zh: 411dbebda7604f27
+/minimal-runnable-example-one-headless-task/key-source-quick-reference:
+  en: e58467958471a980
+  zh: 0982a74a9116417b

@@ -1,26 +1,33 @@
-# 进程/模块划分与职责
+# Process and module map
 
-## 顶层进程结构
+English | [中文](01-process-module-map.zh.md)
 
-dsh 只有一个进程入口：`dsh` CLI。不同的 Profile 决定这个进程承担的不同角色。
+## Top-level process structure
+
+dsh has one process entry: the `dsh` CLI (`apps/cli/src/bin.ts`). The Profile selects the role this process plays.
 
 ```
 dsh (Node.js 进程)
   │
-  ├── profile: web       → 启动 Web 服务器 + Electron-like GUI host
+  ├── profile: web       → 启动 Web 服务器 + GUI host
   ├── profile: headless  → 一次性任务执行后退出
   ├── profile: sdk       → 启动 JSON-RPC 服务器
+  ├── profile: sdk-minimal → 精简 SDK 组合包
   ├── profile: acp       → 启动自动化专用 ACP 服务器
   └── profile: plugin    → 插件管理命令（不是应用启动）
 ```
 
-所有 Profile 共享同一份 CLI 源码（`apps/cli/src/bin.ts`），差异仅在于选哪个 Profile 树来启动 Cordis。
+Every Profile shares the same CLI source; they differ only in which Bundle layers start Cordis.
 
 ---
 
-## 包分组与职责（packages/ 分组全览）
+## Package groups and responsibilities (full packages/ tour)
 
-### 核心脊柱组（core/）
+Group details live in [packages/README.md](../../../packages/README.md); the tables below list the packages on the core path by group, one line per package saying what it does.
+
+### Core spine (core/)
+
+In one sentence: this group is the skeleton of "one conversation" — log, tools, prompt, and Agent all live here.
 
 | 包 | 职责 | 对外服务键 |
 |---|---|---|
@@ -28,12 +35,14 @@ dsh (Node.js 进程)
 | `session` | Append-only 事件日志 + 内存 Store | `ctx.sessions` |
 | `system-prompt` | 从有序章节 + 工具 Schema 组装系统提示词 | `ctx.systemPrompt` |
 | `tools` | 工具注册表 + 安全执行管线 | `ctx.tools` |
-| `agent` | `Agent` 句柄接口 + 注册表 + 事件词汇 | `ctx.agents` |
+| `agent` | Agent 注册表 + 句柄 + 事件 | `ctx.agents` |
 | `agent-default-model` | 部署默认模型选择 | `ctx.agentDefaultModel` |
 | `agent-loop` | 默认 Agent 驱动：Turn/Step 状态机 | `ctx.agentLoop` |
 | `agent-tool-presentation` | Agent 工具呈现模式选择器 | （无，preset 用） |
 
-### LLM 能力组（llm/）
+### LLM family (llm/)
+
+In one sentence: this group "talks to models" — a unified abstract service with adapters for each provider (DeepSeek, Pi AI, ...).
 
 | 包 | 职责 |
 |---|---|
@@ -41,11 +50,13 @@ dsh (Node.js 进程)
 | `llm-deepseek` | DeepSeek API Provider 适配器 |
 | `llm-deepseek-api-key` | API Key 认证 Provider |
 | `llm-deepseek-account` | 账户登录认证 Provider |
-| `llm-pi-ai` | Pi AI Provider 适配器 |
+| `llm-pi-ai` | Pi AI 多 Provider 适配器 |
 | `llm-retry` | 请求失败重试包装器 |
 | `token-meter` | Token 用量计量 |
 
-### Shell 能力组（shell/）
+### Shell family (shell/)
+
+In one sentence: this group "runs commands" — from the model's `bash`/`pwsh` tool calls to real process launch, isolation, and reaping.
 
 | 包 | 职责 |
 |---|---|
@@ -57,7 +68,9 @@ dsh (Node.js 进程)
 | `tool-bash` / `tool-pwsh` | 模型看到的 `bash`/`pwsh` 工具 |
 | `tool-bash-persistent` / `tool-pwsh-persistent` | 持久 Shell 会话工具 |
 
-### 执行与隔离组
+### Execution and isolation
+
+In one sentence: this group is the "safety belt" — every capability that touches the real world (processes, terminals, remote hosts, sandboxing) is funneled through here.
 
 | 包 | 职责 |
 |---|---|
@@ -67,7 +80,9 @@ dsh (Node.js 进程)
 | `terminal` | 持久 PTY 终端服务 |
 | `ptc-runtime` | PTC（可编程工具调用）执行能力 |
 
-### 业务逻辑组
+### Business logic
+
+In one sentence: this group implements the Agent's "higher behaviors" — goals, plans, context compaction, subagent delegation, workflows.
 
 | 包 | 职责 |
 |---|---|
@@ -83,7 +98,9 @@ dsh (Node.js 进程)
 | `preset` | 每个 Session 的 Agent 组成（从 preset cordis.yml） |
 | `guard` | 循环卫生守卫：重复调用提醒 + 工具超时 |
 
-### 可观测与存储组
+### Observability and storage
+
+In one sentence: this group makes history "findable and durable" — search past Sessions, store non-session data, meter token usage.
 
 | 包 | 职责 |
 |---|---|
@@ -91,10 +108,12 @@ dsh (Node.js 进程)
 | `storage` | 非 Session 存储中心 + 后端 |
 | `spill` | 工具结果溢出存储策略 |
 | `attachment` | 二进制附件：内容寻址存储 |
-| `telemetry` | OTel 遥测上报通道 |
+| `session-telemetry-otel` | OTel 遥测上报通道 |
 | `identity` | 匿名身份管理 |
 
-### 扩展与交互组
+### Extensions and interaction
+
+In one sentence: this group is "the interface to people and the outside world" — approval prompts, external tools (MCP), Skills, credentials, and settings.
 
 | 包 | 职责 |
 |---|---|
@@ -105,7 +124,9 @@ dsh (Node.js 进程)
 | `credentials` | 凭证引用 + 凭证记录 + 授权流程 |
 | `settings` | 用户设置文件提供者 |
 
-### Web 能力组
+### Web family
+
+In one sentence: this group lets the Agent "read web pages, control the computer, drive a browser".
 
 | 包 | 职责 |
 |---|---|
@@ -113,7 +134,9 @@ dsh (Node.js 进程)
 | `computer-use` | 桌面 Provider 独占注册 |
 | `browser-use` | 浏览器 Provider 独占注册 |
 
-### 基础设施组
+### Infrastructure
+
+In one sentence: this group is "the utilities" — boot, RPC, filesystem, LSP, background jobs, the SDK server, and other general foundations.
 
 | 包 | 职责 |
 |---|---|
@@ -131,12 +154,15 @@ dsh (Node.js 进程)
 | `context` | 模型可见的请求上下文（工作区指令、时间上下文） |
 | `workspace` | 工作区实体 |
 | `document` | Host Office-to-PDF 转换 |
+| `experimental` | 评估中的能力，无产品支持承诺 |
 | `test-support` | 测试基础设施（testkits、replay、Loader smokes） |
 | `util` | 零依赖底层工具（Branded 类型、路径辅助、超时等） |
 
 ---
 
-## 模块间依赖关系（核心链路）
+## Module dependencies (core path)
+
+Who depends on whom, in which direction — one diagram tells it all (from the entry downward, the lower the more foundational):
 
 ```
 apps/cli (入口)
@@ -145,7 +171,7 @@ apps/cli (入口)
             ├─ llm/llm              ← LLM 服务
             ├─ core/session         ← 日志存储
             ├─ core/tools           ← 工具注册表
-            ├─ core/agent           ← Agent 句柄
+            ├─ core/agent           ← Agent 注册表
             ├─ core/agent-loop      ← Agent 驱动
             ├─ core/system-prompt   ← 提示词组装
             ├─ shell/bash-local     ← Shell 执行
@@ -153,21 +179,23 @@ apps/cli (入口)
             └─ ...
 ```
 
-**关键依赖方向**：
+**Key dependency directions** (these four tell you what a change will ripple into):
 - `agent-loop` → `session`、`tools`、`llm`、`system-prompt`（消费这些服务）
 - `agent` → 独立于 `agent-loop`（允许替换驱动）
-- `tools` → 不依赖 `session`，但执行结果写入 session
+- `tools` → 不依赖 `session`，但执行结果由 agent-loop 写入 session
 - `session` → 不依赖其他核心包（自包含事件源）
 
 ---
 
-## 输入输出总结
+## Inputs and outputs
+
+What each core component "eats and emits" — handy for troubleshooting by tracing a hop:
 
 | 组件 | 输入 | 输出 |
 |---|---|---|
 | CLI (`bin.ts`) | `argv[]` | 启动 Profile 或退出码 |
 | Profile Boot | Profile 名称 + 环境变量 | Cordis Context（含所有服务） |
 | Agent Loop | `AgentOptions`（provider/model） | Session 日志更新 + 模型输出 |
-| LLM Stream | `LlmCallConfig` | `AsyncIterable<StreamChunk>` |
-| Tool Execution | `ToolCall`（name + args） | `ToolExecutionResult` |
+| LLM Stream | `GenerateOptions` | `AsyncIterable<StreamChunk>` |
+| Tool Execution | `ToolBatchInput`（calls + 上限） | `ToolBatchResult` |
 | Session | `SessionEvent` 追加 | 推导出的 `Message[]` |

@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for 00-agent-lifecycle.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/03-detailed/00-agent-lifecycle.md
+/agent-lifecycle-create-drive-finish:
+  en: 89f4953046750320
+  zh: 2a94382478d6acd2
+/agent-lifecycle-create-drive-finish/agent-lifecycle-state-machine:
+  en: 2ee3dc7f065e8777
+  zh: e3abbbe2f7583448
+/agent-lifecycle-create-drive-finish/phase-1-create:
+  en: 3e23cb80ed044e9d
+  zh: a9c8df168126f218
+/agent-lifecycle-create-drive-finish/phase-1-create/step-breakdown:
+  en: 886b11c12ed01cf6
+  zh: 56c7e2fe68597598
+/agent-lifecycle-create-drive-finish/phase-1-create/rollback-guarantees:
+  en: d758d8fcd27f25c0
+  zh: 0ded5d8722a66ba1
+/agent-lifecycle-create-drive-finish/phase-2-drive:
+  en: 11382eaae32fe134
+  zh: 0acb3e3407290076
+/agent-lifecycle-create-drive-finish/phase-2-drive/the-phase-type:
+  en: 16b56145e0d3edf3
+  zh: 52fbc059497c0249
+/agent-lifecycle-create-drive-finish/phase-2-drive/wake-mechanism:
+  en: 09aa6a3a94e41c43
+  zh: 9780a3d44ee56bab
+/agent-lifecycle-create-drive-finish/phase-2-drive/driver-loop-in-pseudocode:
+  en: 8232426d4c213389
+  zh: d2dff3fd6d707446
+/agent-lifecycle-create-drive-finish/phase-3-cancel:
+  en: 1b71e6f870b8e2a8
+  zh: b7c95b7b93818006
+/agent-lifecycle-create-drive-finish/phase-3-cancel/cancel-semantics:
+  en: adeea20b351e93e4
+  zh: 985f8650fd313931
+/agent-lifecycle-create-drive-finish/phase-3-cancel/cancel-execution-path:
+  en: 3e6903874671a523
+  zh: ccff62feaf8d6887
+/agent-lifecycle-create-drive-finish/phase-4-dispose:
+  en: 373e8d4ba58b1034
+  zh: 3090061503316fc4
+/agent-lifecycle-create-drive-finish/phase-4-dispose/dispose-steps:
+  en: e28a524751a5bbd6
+  zh: f308111063222a7b
+/agent-lifecycle-create-drive-finish/phase-4-dispose/dispose-ordering-guarantees:
+  en: c33fab07e726b076
+  zh: badd9ab1265fcabc
+/agent-lifecycle-create-drive-finish/key-source-map:
+  en: d5a69d3b2d1903df
+  zh: 0a1e9d944c3c5743

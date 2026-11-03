@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for 02-session-log.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/03-detailed/02-session-log.md
+/session-log-read-write-and-persistence:
+  en: 9c01da33dae459f7
+  zh: 74178300b72cba84
+/session-log-read-write-and-persistence/the-core-session-design-event-sourcing:
+  en: 043b991ab13ebc87
+  zh: c95d9d8198a33f9c
+/session-log-read-write-and-persistence/the-type-system:
+  en: f3ac9c44c6ca7ba0
+  zh: 0b36ce310fbdfdeb
+/session-log-read-write-and-persistence/the-type-system/branded-id-and-sequence-types:
+  en: 2d58b2c92376915f
+  zh: f5e439bf42d78919
+/session-log-read-write-and-persistence/the-type-system/sessioneventmap:
+  en: 32744edcbadfd888
+  zh: cf9342e399a08072
+/session-log-read-write-and-persistence/the-type-system/surfaceeventtype:
+  en: 59acba83c33d5138
+  zh: 57f4e5b350443a97
+/session-log-read-write-and-persistence/the-type-system/turnendreason-turn:
+  en: 80e54f993affbfe1
+  zh: 27dd50e88091cc26
+/session-log-read-write-and-persistence/the-append-validation-flow:
+  en: 6e1a558e812ee362
+  zh: d81af3e15aeb2484
+/session-log-read-write-and-persistence/the-derivemessages-derivation:
+  en: a7e3032c5e4f4445
+  zh: 159309e69dda3008
+/session-log-read-write-and-persistence/the-persistence-backend:
+  en: a17875d4bd69c1d2
+  zh: 0971c476634e8ad2
+/session-log-read-write-and-persistence/the-persistence-backend/physical-format:
+  en: 0211512e6f519ad2
+  zh: c722fac01954b8d4
+/session-log-read-write-and-persistence/the-persistence-backend/sessionheader:
+  en: 523c324fbf095ab4
+  zh: 16c37e901b50b555
+/session-log-read-write-and-persistence/the-persistence-backend/the-persistence-seam:
+  en: 63b463c051066cd2
+  zh: 84bb1dd5615cbb20
+/session-log-read-write-and-persistence/fork:
+  en: 4a2662158106ccbf
+  zh: f2a522c37cbf1629
+/session-log-read-write-and-persistence/key-source-map:
+  en: 5777f900b2e679a9
+  zh: 52a7125281a19faf

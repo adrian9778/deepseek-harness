@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for 03-cli-boot.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/04-source/03-cli-boot.md
+/cli-launch-path-reference:
+  en: a7e01a4ad085c7b6
+  zh: df0b682329364aca
+/cli-launch-path-reference/module-overview:
+  en: a0389b4d11683628
+  zh: 03e0c80bf31f835a
+/cli-launch-path-reference/bin-ts-the-main-entry:
+  en: 46267a80560fd20a
+  zh: 32b611818b82ab6f
+/cli-launch-path-reference/bin-ts-the-main-entry/runcli-options-26:
+  en: 419fb245d7c6e800
+  zh: 00a3296b23910df6
+/cli-launch-path-reference/args-ts-argument-parsing:
+  en: d68e90dc79a84b00
+  zh: 253b0e0f9439ffa8
+/cli-launch-path-reference/args-ts-argument-parsing/parsedshargs-argv-version-managedesktopprofile-146:
+  en: 1ef27a3809083a8a
+  zh: 99ee7ff7f20c01ab
+/cli-launch-path-reference/profile-boot-ts-profile-launch:
+  en: 24e349750892b72e
+  zh: 5fe109d7afc7e5f6
+/cli-launch-path-reference/profile-boot-ts-profile-launch/runprofile-options-profile-boot-ts-271:
+  en: 49ad7b38cfe338af
+  zh: eb68b426a65858db
+/cli-launch-path-reference/profile-boot-ts-profile-launch/initializeprofilefromdefault-name-fromdefaultprofile-home-108:
+  en: 196cebbcbe70e20a
+  zh: 78e12309725c102d
+/cli-launch-path-reference/startup-failure-handling:
+  en: 27ccc274c49bb8ac
+  zh: 5daee5cf79d43012
+/cli-launch-path-reference/startup-failure-handling/reportstartupfailure-error-context-write-startup-diagnostics-ts-34:
+  en: 7ded49f2f7b1b12b
+  zh: 2c7c5feefe3a1540
+/cli-launch-path-reference/process-shutdown:
+  en: dce9c51db79c2805
+  zh: 371464107bc0c16b
+/cli-launch-path-reference/process-shutdown/createprocessshutdown-ctx-process-shutdown-ts-22:
+  en: e8af8f4665c2abcd
+  zh: e87aec5a65f06015

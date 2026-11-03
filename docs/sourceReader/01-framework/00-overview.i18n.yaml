@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 00-overview.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/01-framework/00-overview.md
+/architecture-overview:
+  en: ad281db7db6ee1be
+  zh: ff4e7591ac608039
+/architecture-overview/one-sentence-description:
+  en: 0cc25cc29766dee5
+  zh: 92b862fbc825e99e
+/architecture-overview/the-three-abstractions:
+  en: f713ba38897489bf
+  zh: f098516e191f62e7
+/architecture-overview/the-three-abstractions/1-profile-launch-menu:
+  en: c0db50d02f7a10b3
+  zh: d4cba88b1110c4a3
+/architecture-overview/the-three-abstractions/2-bundle-plugin-layer:
+  en: 1046dfadb507519b
+  zh: d348012803980e15
+/architecture-overview/the-three-abstractions/3-session-conversation-log:
+  en: 6a5ca1de94e95f1b
+  zh: 53bc0ab3832ee7d7
+/architecture-overview/module-map:
+  en: e21956be855fe728
+  zh: ae8d93319c15332b
+/architecture-overview/end-to-end-flow-text-diagram:
+  en: 216b0026b4ca09cb
+  zh: e06fb753ef41b4fa
+/architecture-overview/key-service-keys-ctx-keys:
+  en: 14def9755e4694d8
+  zh: b3cf96799ffe2bd2
+/architecture-overview/design-principles-from-agents-md:
+  en: ce1a8e7393654ccc
+  zh: afe59db686925d14

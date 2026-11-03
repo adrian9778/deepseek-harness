@@ -1,0 +1,61 @@
+# Bilingual-pair consistency record for 00-agent-loop.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/04-source/00-agent-loop.md
+/agent-loop-package-reference:
+  en: e0c4b3590555e366
+  zh: 99c4e3d7e3468652
+/agent-loop-package-reference/module-overview:
+  en: ae349ff65bcbb0b6
+  zh: e9eeeb539f374b00
+/agent-loop-package-reference/index-ts-the-agentloop-service:
+  en: c5bd5c532cf139d4
+  zh: 07c6d6d04ceac42b
+/agent-loop-package-reference/index-ts-the-agentloop-service/the-agentloop-service-291:
+  en: 5390457319d82817
+  zh: afc1364b17141c9f
+/agent-loop-package-reference/index-ts-the-agentloop-service/inactive-states-41:
+  en: 16b4cd5c10c2ad5b
+  zh: 347269f4d8d5a6ce
+/agent-loop-package-reference/index-ts-the-agentloop-service/turn-boundary-projection:
+  en: 28889c9437a09063
+  zh: f16e99741804af39
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver:
+  en: 85ae67a43f9a6d95
+  zh: 36eae297ebec64fd
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/constructor-agent-ts-137:
+  en: d5e15d84f86c94d7
+  zh: 12cd51eff71bb9ad
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/send-followup-steer-inject-agent-ts-170-190:
+  en: da405be8785308b1
+  zh: 605d6715806ec705
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/cancel-agent-ts-191:
+  en: 9f7f331efd8c6e6a
+  zh: 7565f9f1bab27c4d
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/turn-the-main-turn-loop-agent-ts-327:
+  en: 1209db4045b7123f
+  zh: db15a1f93c01a23d
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/step-one-step-execution-agent-ts-435:
+  en: 0c762c1131b0c065
+  zh: 234b0428cfdda0e6
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/preparerequest-agent-ts-613:
+  en: 0d8ccfc053812d49
+  zh: 016fda308e07d48a
+/agent-loop-package-reference/agent-ts-the-reactloopagent-driver/buildrequest-agent-ts-656:
+  en: 61cacb74b0377b51
+  zh: 5aea5224344c73bc
+/agent-loop-package-reference/inbox-ts-reactloopinbox:
+  en: 741d1f9f606b625c
+  zh: 741d1f9f606b625c
+/agent-loop-package-reference/inbox-ts-reactloopinbox/the-projection-definition-inbox-ts-26:
+  en: e3aa490991d630a4
+  zh: 28b5d3f114952749
+/agent-loop-package-reference/inbox-ts-reactloopinbox/the-reactloopinbox-class-inbox-ts-73:
+  en: 5b62be921366b026
+  zh: ac67796bc1f9bb15
+/agent-loop-package-reference/assistant-stream-ts-stream-accumulation:
+  en: 84906621df960e7c
+  zh: 7fe69840a299b0ad
+/agent-loop-package-reference/assistant-stream-ts-stream-accumulation/the-assistantstreamattempt-class-assistant-stream-ts-18:
+  en: 0703505cd7635ec2
+  zh: 1d1d98cd767e5870

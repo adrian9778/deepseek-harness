@@ -1,8 +1,12 @@
-# Session 日志读写与持久化
+# Session log read/write and persistence
 
-## Session 的核心设计：Event Sourcing
+English | [中文](02-session-log.zh.md)
 
-Session 是一个 **append-only 事件日志**。所有模型可见的历史都从日志中实时推导，而非单独存储。
+Session 是全系统的"唯一事实来源"：对话里发生过的每件事都追加进一份事件日志，模型看到的历史从日志现算，持久化也只落这份日志。这一页先讲清这个设计（Event Sourcing），再拆开 append 验证、历史推导、磁盘格式和 Fork 四个环节，末尾附源码定位表。
+
+## The core Session design: event sourcing
+
+Session 是一个 **append-only 事件日志**。所有模型可见的历史都从日志中实时推导，而非单独存储。好处是：日志永远完整、任何视图都能重建、写入路径只有一条：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -34,7 +38,7 @@ Session 是一个 **append-only 事件日志**。所有模型可见的历史都�
               │  4. 追加到数组         │
               │  5. 递增 seq          │
               │  6. 刷新 surface 投影  │
-              │  7. emit 事件          │
+              │  7. 触发 session/event │
               └───────────────────────┘
                           │
                           │ flush / checkpoint
@@ -47,11 +51,15 @@ Session 是一个 **append-only 事件日志**。所有模型可见的历史都�
 
 ---
 
-## 数据类型体系
+## The type system
 
-**源码位置**：`packages/core/session/src/types.ts` +1-100
+日志里每条记录长什么样、用什么标识？这节列出核心类型：品牌化的 ID（防拿错）、事件类型表（哪些事件存在）、Surface 事件（哪些会进模型历史）、Turn 结束原因（为什么停了）。
 
-### SessionId 与 Sequence 品牌类型
+**Source**: `packages/core/session/src/types.ts` +1-100
+
+### Branded id and sequence types
+
+"品牌化"（Branded）是 TypeScript 的一个技巧：运行时还是普通 string/number，但类型系统上不可混用，把 SessionId 传给要 Sequence 的参数会直接编译报错：
 
 ```ts
 // 品牌化类型：运行时是普通 string/number，类型系统上不可混用
@@ -62,7 +70,9 @@ type SessionSeqCursor   = SessionSeq | -1                        // -1 表示空
 type OptionalSessionSeq = SessionSeq | null                      // null 表示无
 ```
 
-### SessionEventMap（扩展事件类型）
+### SessionEventMap (扩展事件类型)
+
+事件类型表是开放的：插件可以声明合并往里加新事件（比如 compaction、hook），所以叫"可扩展"：
 
 ```ts
 interface SessionEventMap {
@@ -73,16 +83,18 @@ interface SessionEventMap {
   'user/message':        UserMessage
   'system/message':      { turn: number; step: number; message: SystemMessage }
   'assistant/message':   { turn: number; step: number; message: AssistantMessage; stream: AssistantStreamRecord[]; usage?: TokenUsage; interrupted?: true }
-  'assistant/attempt':   { turn: number; step: number; attempt: AssistantAttempt }
-  'tool/result':         { turn: number; step: number; result: ToolResultMessage }
+  'assistant/attempt':   { turn: number; step: number; stream: AssistantStreamRecord[] }
+  'tool/result':         { turn: number; step: number; message: ToolResultMessage }
   'developer/message':   { turn: number; step: number; message: DeveloperMessage; headerSeq?: SessionSeq }
   'request/header':      { reason: RequestHeaderReason; header: EpochHeader }
   'request/context':     { context: RequestContext }
-  // ... 扩展事件（compaction、hook 等）
+  // ... 扩展事件（compaction、hook 等，见 known-event-types.ts）
 }
 ```
 
-### SurfaceEventType（模型可见事件）
+### SurfaceEventType (模型可见事件)
+
+五种事件会进入模型历史（Surface），因此也接受"替换"操作（比如压缩时替换旧消息）；其余事件只是记录，模型永远看不到：
 
 ```ts
 type SurfaceEventType =
@@ -95,23 +107,28 @@ type SurfaceEventType =
 
 Surface 事件是模型历史的一部分，接受替换操作（replacement）。
 
-### TurnEndReason（Turn 结束原因）
+### TurnEndReason (Turn 结束原因)
+
+每个 Turn 结束时都写明"为什么停了"，排查问题时第一个看这里：
 
 ```ts
 type TurnEndReason =
   | { kind: 'completed' }         // 正常完成
-  | { kind: 'cancelled'; cause: AgentCancelCause }
-  | { kind: 'rejected' }          // pre-step 拒绝
+  | { kind: 'aborted'; reason: AgentCancelCause }
+  | { kind: 'blocked' }           // pre-step 拒绝
+  | { kind: 'error'; error: LlmFailure }
   | { kind: 'max-tokens' }        // 达到最大 token 限制
-  | { kind: 'forked' }            // 被 fork 中断
   | { kind: 'interrupted' }       // 进程中断后恢复
+  | { kind: 'forked' }            // 被 fork 中断
 ```
 
 ---
 
-## Append 验证流程
+## The append validation flow
 
-**源码位置**：`packages/core/session/src/index.ts` +append、`packages/core/session/src/surface.ts` +1-200
+往日志里追加一条事件要过七道关。这样设计的原因：日志一旦写入就不可改，所以必须在入口把不合法的数据全部拦下：
+
+**Source**: `packages/core/session/src/index.ts` append, `packages/core/session/src/surface.ts`
 
 ```
 session.append(type, data, opts?)
@@ -122,10 +139,9 @@ session.append(type, data, opts?)
   ├─ [2] Surface 事件的额外验证
   │     if (isSurfaceEventType(type)) {
   │       if (!opts?.surfaceOp) throw MISSING_SURFACE_OP
-  │       if (!data.source) throw MISSING_SOURCE
   │       if (opts.surfaceOp === 'replace') {
   │         validateReplacement(event, surface, opts.surfaceOp)
-  │           → startSeq/endSeq 必须在当前 surface 范围内
+  │           → seq 范围必须在当前 surface 节点内
   │           → 替换范围必须完整覆盖目标节点
   │       }
   │     }
@@ -149,26 +165,22 @@ session.append(type, data, opts?)
   │     deepFreeze(event)  ← 不可变
   │
   ├─ [6] 刷新 Surface Manager
-  │     if (isSurfaceEventType(type)) {
-  │       surfaceManager.handleAppend(event, opts?.surfaceOp)
-  │         → 追加操作：新增 surface 节点
-  │         → 替换操作：标记旧节点为 replaced，新增替换节点
-  │         → 更新 contentGeneration / replaceGeneration
-  │     }
+  │     surfaceManager 应用 pendingPlan
+  │       → 追加操作：新增 surface 节点
+  │       → 替换操作：标记旧节点为 replaced，新增替换节点
+  │       → 更新 contentGeneration / replaceGeneration
   │
-  ├─ [7] 触发事件
-  │     emit('session/event', event)
-  │     emit('session/events', [event])  // 批量事件
-  │
-  └─ [8] 通知 persistence 后端（如有）
-        persistenceQueue.enqueue(event)
+  └─ [7] 触发事件
+        emit('session/event', event)  — 广播给所有监听器
 ```
 
 ---
 
-## deriveMessages() 推导逻辑
+## The deriveMessages() derivation
 
-**源码位置**：`packages/core/session/src/index.ts` +deriveMessages、`packages/core/session/src/surface.ts` +derive
+模型看到的历史不是存的，是算的。推导有缓存：日志没变就直接返回上次结果，变了才重新折叠：
+
+**Source**: `packages/core/session/src/index.ts` deriveMessages, `packages/core/session/src/surface.ts` foldSurface
 
 ```
 session.deriveMessages()
@@ -197,27 +209,35 @@ session.deriveMessages()
 
 ---
 
-## 持久化后端
+## The persistence backend
 
-### 物理格式
+内存日志之外，持久化后端负责把日志落成磁盘文件、重启后再读回来。先看文件长什么样，再看接口怎么定义。
+
+### Physical format
+
+目录按"项目工作目录 → Session 编号"两级组织，同一 Session 的各代格式文件并存，旧文件永不改名或删除：
 
 ```
-$DSH_HOME/sessions/<sessionId>/
-  ├── session.v1.jsonl.zstd   ← V1 格式（历史）
-  ├── session.v2.jsonl.zstd   ← V2 格式（历史）
-  ├── session.v3.jsonl.zstd   ← V3 格式（历史）
-  ├── session.v4.jsonl.zstd   ← V4 格式（当前）
-  └── session.header.json     ← 元数据（version, id, createdAt, ...）
+$DSH_HOME/sessions/
+  └── --<normalized-cwd>--/          ← 项目目录（或 _no-cwd/）
+       └── <encoded-id>/             ← Session 专属目录
+            ├── session.jsonl.zstd      ← v0（历史）
+            ├── session.v1.jsonl.zstd   ← v1（历史）
+            ├── session.v2.jsonl.zstd   ← v2（历史）
+            ├── session.v3.jsonl.zstd   ← v3/v4（当前）
+            └── session.vN.jsonl.zstd   ← 后续版本使用 vN
 ```
 
 - 每次写入是追加操作，不覆盖
-- 压缩格式：zstd
+- 压缩格式：zstd checksummed frames（或 `'none'` 明文）
 - 版本文件名小写，旧版本不重命名
 - 每个 Format Migration 包负责一个 `vN → vN+1` 的转换
 
 ### SessionHeader
 
-**源码位置**：`packages/core/session/src/types.ts` +SessionHeader
+每个 Session 文件开头都有一份"档案"：版本号、创建时间、来源（子 Agent？fork？），读取时先看这个再决定怎么解析：
+
+**Source**: `packages/core/session/src/types.ts` +95
 
 ```ts
 interface SessionHeader {
@@ -225,7 +245,7 @@ interface SessionHeader {
   id: SessionId
   createdAt: number                        // Unix ms
   cwd?: string                             // 创建时的工作目录
-  parentSession?: SessionId                // fork 来源
+  parentSession?: SessionId                // 子 Agent 直接创建者
   isSeeded: boolean                        // 是否有 fork 继承历史
   origin?: 'subagent'                      // 子 Agent 标记
   delegationDepth?: number                 // 委托深度
@@ -233,22 +253,23 @@ interface SessionHeader {
 }
 ```
 
-### Persistence Seam（持久化缝）
+### The persistence seam (持久化缝)
+
+持久化同样走"接口 / 实现 / 使用者"三角色分离：定义方只说"要能创建、打开、刷盘、列举"，具体存哪里、什么格式由实现方决定：
 
 ```
 ┌─────────────────────────────────────────────┐
 │  Service Definition                          │
-│  packages/core/session-persistence/src/      │
-│    interface SessionPersistence {            │
-│      create(header): Promise<SessionHandle>  │
-│      open(id, mode): Promise<SessionHandle>  │
-│      stat(id): Promise<SessionStat>          │
-│      list(): Promise<SessionStat[]>          │
-│      export(id): AsyncIterable<SessionEvent> │
-│    }                                         │
+│  packages/session/session-persistence/src/   │
+│    abstract class SessionPersistence         │
+│      create(header, options?): SessionHandle │
+│      open(id, access, options?): SessionHandle│
+│      flush(): Promise<void>                  │
+│      stat(id): Promise<Snapshot | undefined> │
+│      list(): Promise<Snapshot[]>             │
 ├─────────────────────────────────────────────┤
 │  Service Provider                            │
-│  packages/session/session-log-deepseek/      │
+│  packages/session/session-persistence-jsonl/ │
 │    → JSONL + zstd 文件系统实现               │
 ├─────────────────────────────────────────────┤
 │  Consumer                                    │
@@ -260,19 +281,21 @@ interface SessionHeader {
 
 ---
 
-## Fork（会话分叉）
+## Fork (会话分叉)
 
-**源码位置**：`packages/core/session/src/fork.ts`
+Fork 把一个活着的 Session 从某个位置"切开复制"出一个新 Session：父 Session 继续跑，子 Session 带走之前的历史。典型用途是子 Agent 委托：
+
+**Source**: `packages/core/session/src/fork.ts` buildForkSeed, `packages/core/session/src/index.ts` SessionStore.fork
 
 ```
 ctx.sessions.fork(source, boundary?, childSessionId?)
   │
   ├─ 验证 source 是 live Session
   ├─ 确定 cut point（默认：最后一个事件的 seq）
-  ├─ 复制 events[0..cut] 作为 seed
-  ├─ 追加 fork marker（inheritedEventCount = cut）
+  ├─ buildForkSeed：复制 events[0..cut] 作为 seed
+  ├─ 追加 session/end-seed 标记（inheritedEventCount = cut）
   ├─ 为 open step 补充缺失的 tool result
-  ├─ 追加 interruptedTurnClosers（关闭父 session 的未完成 turn/step）
+  ├─ 追加 openTurnClosers（关闭父 session 的未完成 turn/step，cause 'forked'）
   ├─ 创建新 Session（childSessionId 或自动生成）
   └─ 返回新 Session
 ```
@@ -284,15 +307,17 @@ Fork 后的父子 Session：
 
 ---
 
-## 关键源码定位
+## Key source map
 
-| 功能 | 源码文件 | 关键行 |
+想直接跳进源码时用这张表，按功能直达文件和行号：
+
+| 功能 | 源码文件 | 关键部分 |
 |---|---|---|
-| Session 类定义 | `packages/core/session/src/index.ts` | +522 |
-| append() 验证 | `packages/core/session/src/index.ts` | +798 |
-| deriveMessages() | `packages/core/session/src/index.ts` | +984 |
-| Surface 投影 | `packages/core/session/src/surface.ts` | +1-300 |
+| Session 类定义 | `packages/core/session/src/index.ts` | +525 |
+| append() 验证 | `packages/core/session/src/index.ts` | +806 |
+| deriveMessages() | `packages/core/session/src/index.ts` | +999 |
+| Surface 投影 | `packages/core/session/src/surface.ts` | SurfaceManager (+612) |
 | 类型定义 | `packages/core/session/src/types.ts` | +1-200 |
-| Fork | `packages/core/session/src/fork.ts` | +1-30 |
+| Fork | `packages/core/session/src/fork.ts` | buildForkSeed |
 | Request Header | `packages/core/session/src/request-header.ts` | +1-69 |
-| 修复 | `packages/core/session/src/repair.ts` | +1-211 |
+| 修复 | `packages/core/session/src/repair.ts` | ToolCallRecovery (+105) |

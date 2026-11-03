@@ -1,13 +1,19 @@
-# CLI 启动流程源码解析
+# CLI launch path reference
 
-## 模块概览
+English | [中文](03-cli-boot.zh.md)
 
-**源码目录**：`apps/cli/src/`
+敲下 `dsh` 之后发生什么？这一篇拆开 CLI 的启动链路：入口怎么分派、参数怎么解析、Profile 怎么加载、失败怎么报告、进程怎么优雅退出。与第二层的全路径示例互补：那篇看全景，这篇看实现。
+
+## Module overview
+
+八个文件按职责划分：入口、参数、启动、子命令、诊断、关机：
+
+**Source directory**: `apps/cli/src/`
 
 | 文件 | 职责 |
 |---|---|
 | `bin.ts` | CLI 主入口：参数分派 |
-| `args.ts` | Commander.js 参数解析 |
+| `args.ts` | Commander 参数解析 |
 | `profile-boot.ts` | Profile 启动：加载配置、叠加 patch、启动 Cordis |
 | `plugin.ts` | `dsh plugin` 子命令实现 |
 | `dump-config.ts` | `--dump-config` 实现 |
@@ -17,9 +23,11 @@
 
 ---
 
-## bin.ts — 主入口
+## bin.ts — the main entry
 
-### `runCli(options)`（+1-55）
+### `runCli(options)` (+26)
+
+入口只做一件事：解析参数，然后按模式分派给四个子模块（动态 import，保证冷启动只加载用到的部分）：
 
 ```ts
 export async function runCli(options: RunCliOptions = {}): Promise<void>
@@ -47,13 +55,15 @@ export async function runCli(options: RunCliOptions = {}): Promise<void>
      await runDumpConfigSchema(...)
 ```
 
-**关键设计**：CLI 自身只解析 launcher 拥有的参数（`--profile`、`--patch`、`--dump-*`），所有其他参数透传给被启动的 Profile 应用。
+**关键设计**：CLI 自身只解析 launcher 拥有的参数（`--profile`、`--patch`、`--dump-*`），所有其他参数透传给被启动的 Profile 应用。这样各 Profile 可以定义自己的子命令而不互相干扰。
 
 ---
 
-## args.ts — 参数解析
+## args.ts — argument parsing
 
-### `parseDshArgs(argv, version, manageDesktopProfile)`（+80-250）
+### `parseDshArgs(argv, version, manageDesktopProfile)` (+146)
+
+解析规则一句话：先吃掉自己认识的标志，剩下的全给 Profile：
 
 **返回类型**：`DshInvocation`（联合类型）
 
@@ -65,7 +75,7 @@ type DshInvocation =
   | PluginInvocation     // { mode: 'plugin', profile, args }
 ```
 
-**解析逻辑**（Commander.js）：
+**解析逻辑**（Commander）：
 
 ```
 Launcher 自己的标志（先消费）：
@@ -88,9 +98,11 @@ Launcher 自己的标志（先消费）：
 
 ---
 
-## profile-boot.ts — Profile 启动
+## profile-boot.ts — Profile launch
 
-### `runProfile(options)`（profile-boot.ts +271）
+启动的五步舞：环境变量 → Profile 配置 → 关机处理 → Cordis 装插件 → 等应用完成。
+
+### `runProfile(options)` (profile-boot.ts +271)
 
 ```ts
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }>
@@ -102,40 +114,33 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
 1. loadLayeredEnv('dsh')
    → 读取 $DSH_HOME/.env
    → 读取项目根目录 .env
-   → 合并到 process.env
+   → 合并到 process.env（不覆盖已有值）
    → 返回 LaunchEnvironmentSnapshot
 
-2. resolveProfileDir(profile, home)
-   → $DSH_HOME/profiles/<profile>/
+2. composeProfile(profile, patchFiles, fromDefaultProfile, resolvedProfile)
+   → resolveProfileDir → $DSH_HOME/profiles/<profile>/
+   → createRuntimeResolution
+   → loadOverlayPatches
 
-3. readProfilePatches(profileDir)
-   → 读取 package.json.dsh.profile.bundles → Bundle 列表
-   → 读取 cordis.patch.yml → 用户覆盖层
-   → 读取 cordis.yml（如果有）→ 基线配置
+3. createProcessShutdown(dispose)
+   → SIGTERM → interrupt(0)；SIGINT → interrupt(130)
+   → 优雅 dispose 超时后强制退出
 
-4. loadOverlayPatches(patches)
-   → 解析 --patch 指定的额外 overlay 文件
+4. boot(NAME, rootConfig, readProfilePatches(...), prepare)
+   → new Context() + ctx.plugin(Loader)
+   → mountRootInclude：cordis:include 条目树 + patch 层
+   → prepare：profileContext、launch environment、PluginPackages、provideCmdline
+   → loader.await() 按依赖顺序挂载全部条目
 
-5. createAppReady()
-   → 创建 readiness 信号（boot 完成后再提交）
-
-6. initProfile(tree, { patches, overlayPatches, ... })
-   → 组装最终插件树
-   → 空根配置 [] + 所有 patch 叠加
-
-7. boot(composedTree, { onReady, environment, ... })
-   → 启动 Cordis Loader
-   → 按依赖顺序 apply 每个 Plugin
-   → Loader 就绪后 commitAppReady()
-   → 触发 ctx.cmdlineArgs 注入 inner args
-
-8. 等待应用完成（取决于具体 Profile）
+5. 等待应用完成（取决于具体 Profile）
    - headless: 等 Agent 完成 → 打印结果 → 退出
    - web: 启动 HTTP 服务器 → 保持运行
    - sdk: 启动 JSON-RPC server → 保持运行
 ```
 
-### `initializeProfileFromDefault(name, fromDefaultProfile, home)`（+100-200）
+### `initializeProfileFromDefault(name, fromDefaultProfile, home)` (+108)
+
+从 shipped 模板重建自定义 Profile。用 staging 目录 + 原子 rename，失败不污染现有目录：
 
 **用途**：从 shipped template 重建 custom profile。
 
@@ -147,26 +152,28 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
 
 ---
 
-## 启动失败处理
+## Startup failure handling
 
-### `reportStartupFailure(error, { home, version, profile })`（`startup-diagnostics.ts`）
+失败不是无声的：写结构化报告到日志目录，stderr 给出路径，退出码 1。
+
+### `reportStartupFailure(error, context, write?)` (`startup-diagnostics.ts` +34)
 
 **逻辑**：
-1. 检测常见失败模式（端口占用、权限、缺少依赖）
-2. 生成结构化错误报告
-3. 写入 `$DSH_HOME/logs/startup-failure.log`
-4. 打印到 stderr
-5. `process.exit(1)`
+1. 生成结构化错误报告（时间、版本、Node/平台、profile、error，含凭据警告）
+2. 写入 `$DSH_HOME/logs/startup-<timestamp>-<uuid>.log`
+3. 打印错误与诊断路径到 stderr
+4. 调用方 `process.exit(1)`
 
 ---
 
-## 进程关机
+## Process shutdown
 
-### `createProcessShutdown(ctx)`（`process-shutdown.ts`）
+Ctrl+C 之后发生什么：优雅收尾而不是硬杀。
+
+### `createProcessShutdown(ctx)` (`process-shutdown.ts` +22)
 
 **注册信号处理**：
-- `SIGINT` / `SIGTERM` → 触发 `ctx.dispose()`
-- 等待所有 Agent 完成（`whenIdle()`）
-- 超时后强制退出
+- `SIGINT` / `SIGTERM` → 触发 `interrupt()` → 优雅 dispose
+- 超时（`PROCESS_SHUTDOWN_TIMEOUT_MS` = 5s）后强制退出
 
-**设计原则**：关机是 graceful 的——不硬 kill，让 Agent Loop 正常完成当前 Step 后再退出。
+**设计原则**：关机是 graceful 的——不硬 kill，让应用树正常完成当前工作后再退出。

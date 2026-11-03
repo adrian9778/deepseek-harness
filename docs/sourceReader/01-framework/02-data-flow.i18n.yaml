@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 02-data-flow.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/sourceReader/01-framework/02-data-flow.md
+/main-data-flow-end-to-end:
+  en: 43ee5150b08098de
+  zh: d1158a2f4fd5e150
+/main-data-flow-end-to-end/request-flow-panorama-ascii:
+  en: 85d260827462589b
+  zh: 41520bb3636c3b36
+/main-data-flow-end-to-end/flow-details:
+  en: 44fc2baa4c891f78
+  zh: 7da8891b62584dbe
+/main-data-flow-end-to-end/flow-details/1-launch-time-flow:
+  en: 2b0da8049c3da057
+  zh: 1648d514f877feb6
+/main-data-flow-end-to-end/flow-details/2-agent-creation-flow:
+  en: 68cd5629db73635f
+  zh: b7781dd2416e9c62
+/main-data-flow-end-to-end/flow-details/3-user-input-flow:
+  en: 4f02efeb0d6be33f
+  zh: 14222911c0b0099d
+/main-data-flow-end-to-end/flow-details/4-one-complete-turn:
+  en: aac566190a489c16
+  zh: cbda69e98cc380ec
+/main-data-flow-end-to-end/flow-details/5-session-log-write-flow:
+  en: 7b980fdcdc2d401b
+  zh: cbfbd2184c35edc0
+/main-data-flow-end-to-end/flow-details/6-persistence-flow:
+  en: 424ba6f6d257705d
+  zh: adb8b02f5e88e9e8
+/main-data-flow-end-to-end/error-propagation-paths:
+  en: acd6c16738b97daf
+  zh: 38e2888e6317e885
+/main-data-flow-end-to-end/immutable-objects-in-key-flows:
+  en: afce112ba64a1fd9
+  zh: b86647059a9636d3
