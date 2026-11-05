@@ -52,7 +52,7 @@ English | [中文](04-system-prompt-assembly.zh.md)
 
 一个 Section 就是一条"固定栏目"：有名字（防重复）、有次序（order 决定位置）、有内容（静态文本或动态 provider）：
 
-**Source**: `packages/core/system-prompt/src/index.ts` +53
+**Source**: `packages/core/system-prompt/src/index.ts` · PromptSection
 
 ```ts
 interface PromptSection {
@@ -107,17 +107,15 @@ ctx.systemPrompt.tools(({ scope, toolSet }) => ({ ...executor.describe(...), kno
 拼好的提示词去哪里？第一次写入 Session 作为 node 0；之后工具变了就"替换"这个节点，而不是追加新消息——这保证了模型历史里始终只有一份最新系统提示词：
 
 ```ts
-// 首次：写入 surface node 0
-session.append('system/message', {
-  turn, step,
-  message: { text: systemText, nodes: [{ id: 'node-0', text: systemText }] },
-}, { surfaceOp: { op: 'append' } })
+// 首次：写入 surface node 0（Step 循环提交 SystemPromptProjection 产出的 commit）
+session.append('system/message',
+  { turn, step, message: createSystemMessage(systemText) },
+  { surfaceOp: 'append' })
 
 // 后续替换（如工具变化）：
-session.append('system/message', {
-  turn, step,
-  message: { text: newSystemText, nodes: [...] },
-}, { surfaceOp: { op: 'replace', startSeq: lastSysSeq, endSeq: lastSysSeq } })
+session.append('system/message',
+  { turn, step, message: createSystemMessage(newSystemText) },
+  { surfaceOp: { op: 'replace', startSeq: lastSysSeq, endSeq: lastSysSeq } })
 ```
 
 ### 3. In-history vs head update modes
@@ -129,7 +127,7 @@ session.append('system/message', {
 | `'in-history'` | system 消息可出现在对话历史任意位置 | 支持该能力的模型 |
 | 缺省 | system 消息只在对话头部 | 大多数 OpenAI 兼容 API |
 
-**Source**: `packages/llm/llm/src/types.ts` LlmResolvedModelInfo
+**Source**: `packages/llm/llm/src/types.ts` · LlmResolvedModelInfo
 
 ---
 
@@ -145,20 +143,21 @@ System prompt 在 Session 中是一个 "surface node"（表面节点）。
 规则：
 1. 第一个 system/message 是 node 0，受到保护
    - 不能被非 system/message 事件替换
-   - 不能被覆盖范围包含 node 0 的替换操作删除
+   - 只能被恰指该节点的 system/message 改写（assertSystemHeadRewrite）
 
 2. 后续 system/message 是 node 1, 2, ...
    - 可以被替换
    - 空渲染（empty text）清除该节点
 
-3.  incapable route（不支持 in-history system 的模型）：
-   - 新 series 时，非空 text 合并到 node 0
+3. incapable route（不支持 in-history 的模型）：
+   - 每次 Step 重读：node 0 被重写为当前渲染文本（文本未变则不产生事件）
    - 非空 later nodes 被清空（logged empty replacement）
-   - 空 text 直接清除所有 active nodes
+   - 空 rendered 重写 node 0 为空并清空后续，等效清除所有 active nodes
 
 4. capable route（支持 in-history 的模型）：
-   - 在同一 series 内，新 text 追加为更新的 system node
-   - 旧 node 保留但标记为 superseded
+   - 同一 series 内文本变化时，非空 text 追加为新 system 节点
+   - 旧 node 原样保留（保持请求前缀，无 superseded 标记）
+   - 系列开始且最新存活节点已是该文本时，不产出任何事件
 ```
 
 ---
@@ -176,9 +175,11 @@ class RuntimeContextProjection {
   // 维护 per-step 的运行时事实快照
   project(joined: string, sections: readonly ContextSnapshotSection[]): UserMessage | undefined {
     // 收集：工作目录、沙箱策略、审批策略、时间等上下文章节
-
-    // 以 durable 的 user-role 快照写入 Session
-    session.append('user/message', message, { surfaceOp: { op: 'append' } })
+    // 返回"未提交"的候选 user 消息：内容与上一个快照一致时返回 undefined
+    // （全部清除时返回 CLEARED 哨兵文本的快照）
+    // 不在此处写日志——提交发生在 ReactLoopAgent.step：
+    //   session.append('user/message', context, { surfaceOp: 'append' })
+    // （每个请求系列只 admitted 一次）
   }
 }
 ```
@@ -189,13 +190,13 @@ SystemPromptProjection 决定 `system/message` 的提交：它按 `renderPrompt(
 
 ## Key source map
 
-想直接跳进源码时用这张表，按功能直达文件和行号：
+想直接跳进源码时用这张表，按功能直达文件与符号：
 
 | 功能 | 源码文件 | 关键部分 |
 |---|---|---|
-| PromptSection 类型 | `packages/core/system-prompt/src/index.ts` | +53 |
-| assemble() 主逻辑 | `packages/core/system-prompt/src/index.ts` | assemble (+621) |
-| 工具 Schema 注入 | `packages/core/system-prompt/src/index.ts` | tools (+552) |
-| System message 节点管理 | `packages/core/session/src/surface.ts` | assertSystemHeadRewrite (+493) |
-| Runtime context 刷新 | `packages/core/agent-loop/src/runtime-context.ts` | +1-169 |
-| Provider system prompt 模式 | `packages/llm/llm/src/types.ts` | LlmResolvedModelInfo |
+| PromptSection 类型 | `packages/core/system-prompt/src/index.ts` | `PromptSection` |
+| assemble() 主逻辑 | `packages/core/system-prompt/src/index.ts` | `assemble` |
+| 工具 Schema 注入 | `packages/core/system-prompt/src/index.ts` | `tools` |
+| System message 节点管理 | `packages/core/session/src/surface.ts` | `assertSystemHeadRewrite` |
+| Runtime context 刷新 | `packages/core/agent-loop/src/runtime-context.ts` | `SystemPromptProjection`、`RuntimeContextProjection` |
+| Provider system prompt 模式 | `packages/llm/llm/src/types.ts` | `LlmResolvedModelInfo` |

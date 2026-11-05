@@ -192,20 +192,24 @@ Header 只在新系列开始时写一次，后续 Step 继承最新 header。
 
 ### 4. Cancellation inside a Step
 
-取消不打断"已经发生的"，只叫停"还没发生的"：已流出的文本保留、未跑完的工具不记结果、关闭事件恢复时补齐：
+取消不打断"已经发生的"，只叫停"还没发生的"：已流出的文本保留，未完成的调用收到合成收尾，Turn 以 aborted 落幕：
 
 ```
 cancel() 在 Step 执行中：
   ├─ LLM stream: AbortSignal 触发 → stream 中止
   │   → 已累积的文本以 interrupted: true 写入 assistant/message
+  │     （没有任何文本时降级为 assistant/attempt，不进入模型历史）
   │
   ├─ 工具执行: exec.signal 触发
   │   → 工具 execute() 函数应 cooperative 检查 signal
-  │   → 未完成的结果不写入 Session
+  │   → 真实执行结果不写入；Step 收尾时由 ToolCallRecovery 补记合成
+  │     error 结果（未启动 TOOL_NOT_STARTED / 已启动结果未知
+  │     TOOL_OUTCOME_UNKNOWN），provider 不会看到悬空的工具调用
   │
-  └─ Step 中止后：
-      → 不写入 step/end（finally 之外）
-      → 恢复时由 interruptedTurnClosers 补齐关闭事件
+  └─ Step 中止后（turn() 的 finally 照常执行）：
+      → step/end 照常写入；turn/end 以 reason { kind: 'aborted' } 收尾
+      → 只有进程崩溃留下的悬空 turn，才由 interruptedTurnClosers
+        在 resume 时补齐关闭事件（cause 'interrupted'）
 ```
 
 ---
@@ -235,12 +239,11 @@ cancel() 在 Step 执行中：
 
 这一类事件不进日志，只在本进程内广播，是插件挂接 Agent 行为的主要入口：
 
-这一类事件不进日志，只在本进程内广播，是插件挂接 Agent 行为的主要入口：
-
 | 事件类型 | 分发模式 | 用途 |
 |---|---|---|
 | `agent/pre-step` | waterfall | 拦截/改写 Step 输入 |
 | `agent/request` | waterfall | 拦截/改写模型请求 |
+| `agent/request-error` | waterfall | 请求失败后裁决重试或放弃 |
 | `agent/assistant-stream` | emit | UI 增量渲染 |
 | `agent/status` | emit | UI 状态更新 |
 | `agent/created` | serial | 初始化后通知 |
@@ -254,14 +257,14 @@ cancel() 在 Step 执行中：
 
 ## Key source map
 
-想直接跳进源码时用这张表，按概念直达文件和行号：
+想直接跳进源码时用这张表，按概念直达文件与符号：
 
 | 概念 | 源码文件 | 关键部分 |
 |---|---|---|
-| Turn 状态机 | `packages/core/agent-loop/src/agent.ts` | turn (+327) |
-| Step 循环 | `packages/core/agent-loop/src/agent.ts` | step (+435) |
-| Pre-step 决策 | `packages/core/agent-loop/src/agent.ts` | preStep (+283) |
-| Tool 批量执行 | `packages/core/tools/src/batch.ts` | executeToolBatch (+50) |
-| Stream 处理 | `packages/core/agent-loop/src/assistant-stream.ts` | AssistantStreamAttempt (+18) |
-| Inbox 管理 | `packages/core/agent-loop/src/inbox.ts` | ReactLoopInbox (+73) |
-| Request header | `packages/core/session/src/request-header.ts` | +1-69 |
+| Turn 状态机 | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.turn` |
+| Step 循环 | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.step` |
+| Pre-step 决策 | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.preStep` |
+| Tool 批量执行 | `packages/core/tools/src/batch.ts` | `executeToolBatch` |
+| Stream 处理 | `packages/core/agent-loop/src/assistant-stream.ts` | `AssistantStreamAttempt` |
+| Inbox 管理 | `packages/core/agent-loop/src/inbox.ts` | `ReactLoopInbox` |
+| Request header | `packages/core/session/src/request-header.ts` | `canonicalHeader / foldRequestHeader` |

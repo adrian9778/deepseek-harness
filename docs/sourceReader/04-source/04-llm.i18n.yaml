@@ -3,56 +3,56 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/sourceReader/04-source/04-llm.md
 /llm-package-reference:
-  en: 29b51a1e67f2f7e2
-  zh: a00acfcd3e7c2389
+  en: e63654d52bbf0603
+  zh: 49ceae9a3dfa9973
 /llm-package-reference/module-overview:
-  en: 847224f576bc4c0d
-  zh: 89b44d2fa591c5d8
+  en: 67e750eac61df420
+  zh: 65b9563d301df00a
 /llm-package-reference/index-ts-the-llmruntime-service:
   en: a0b0828d75011c02
   zh: eadd31ac2aaa4919
-/llm-package-reference/index-ts-the-llmruntime-service/the-llmruntime-class-llm-index-ts-354:
-  en: 3fe43fef221d517d
-  zh: 65b7c70e8bd6bd78
-/llm-package-reference/index-ts-the-llmruntime-service/registeradapter-providers-adapter-401:
-  en: 4615f7299ccdfbc5
-  zh: eac91bb61e295f7c
-/llm-package-reference/index-ts-the-llmruntime-service/registerconfigurableproviders-entries-495:
-  en: 837ac565a9b3ef92
-  zh: 9659d90853848697
-/llm-package-reference/index-ts-the-llmruntime-service/stream-options-llm-index-ts-1170:
-  en: 93828bafd378e84b
-  zh: e53627ac48926549
-/llm-package-reference/index-ts-the-llmruntime-service/preparecall-config-signal-configure-llm-index-ts-960:
-  en: 32362bf9cea45ae9
-  zh: fa62e8da800f614c
-/llm-package-reference/index-ts-the-llmruntime-service/listmodels-provider-718:
-  en: b46ecb7f33b473ef
-  zh: 4c8b9454f6f62946
-/llm-package-reference/index-ts-the-llmruntime-service/resolvemodelinfo-provider-model-760:
-  en: 5689bfa99297b3e7
-  zh: 6cd39835d6d95a6b
-/llm-package-reference/the-llmadapter-abstract-class-208:
-  en: 3152f763c5099f16
-  zh: 144102d27ee034b7
-/llm-package-reference/the-llmerror-class-96:
-  en: 5c2c466d35fd20ca
-  zh: f3637cf023eb72b8
+/llm-package-reference/index-ts-the-llmruntime-service/the-llmruntime-class-index-ts-llmruntime:
+  en: d952662fb3e5d298
+  zh: 0397466ab47cce91
+/llm-package-reference/index-ts-the-llmruntime-service/registeradapter-providers-adapter-index-ts-llmruntime-registeradapter:
+  en: 50b92fde17deb5f8
+  zh: 4dcc60b280583b51
+/llm-package-reference/index-ts-the-llmruntime-service/registerconfigurableproviders-entries-index-ts-llmruntime-registerconfigurableproviders:
+  en: 850f27344bb5bb2a
+  zh: 58b05b53a49e304b
+/llm-package-reference/index-ts-the-llmruntime-service/stream-options-index-ts-llmruntime-stream:
+  en: e1fcaff3edf70551
+  zh: 1e35368fd521cbe2
+/llm-package-reference/index-ts-the-llmruntime-service/preparecall-config-signal-configure-index-ts-llmruntime-preparecall:
+  en: ae7b15e377a033f6
+  zh: f4a02dbe25e2bdd3
+/llm-package-reference/index-ts-the-llmruntime-service/listmodels-provider-index-ts-llmruntime-listmodels:
+  en: 4f6d80378a96cfc9
+  zh: a24b23a2da91bbfb
+/llm-package-reference/index-ts-the-llmruntime-service/resolvemodelinfo-provider-model-index-ts-llmruntime-resolvemodelinfo:
+  en: 0bd8498454f9f441
+  zh: 455eaebb91880164
+/llm-package-reference/the-llmadapter-abstract-class-index-ts-llmadapter:
+  en: a764357dbcb7053a
+  zh: 8fa9440716380da9
+/llm-package-reference/the-llmerror-class-index-ts-llmerror:
+  en: 4c34f1cd772d1803
+  zh: 94cbfb288bb7782e
 /llm-package-reference/types-ts-core-types:
   en: 57a3a642fe4fba85
   zh: e2fd75cdf9001101
-/llm-package-reference/types-ts-core-types/streamchunk-496:
-  en: 9b4586491815686e
-  zh: 73c9e95f01d925c8
-/llm-package-reference/types-ts-core-types/generateoptions-564:
-  en: 2056c28a11c88251
-  zh: be95e02749db8d78
-/llm-package-reference/types-ts-core-types/llmcallconfig-200-280:
-  en: e50a5b92adf164a5
-  zh: 503eae2b48e9bfdc
-/llm-package-reference/types-ts-core-types/llmresolvedmodelinfo-280-350:
-  en: 2de4626a1653e4bb
-  zh: 617ca1e78ae7ac1e
-/llm-package-reference/types-ts-core-types/systempromptupdate-350-380:
-  en: 0db29003825be21b
-  zh: 30eaef2be9ecff93
+/llm-package-reference/types-ts-core-types/streamchunk-types-ts-streamchunk:
+  en: 293d380e984bf5d4
+  zh: 03c5e0cef6e80981
+/llm-package-reference/types-ts-core-types/generateoptions-types-ts-generateoptions:
+  en: 5d6d3cd250302b86
+  zh: 7c2f2c7f834660d6
+/llm-package-reference/types-ts-core-types/llmcallconfig-call-config-ts-llmcallconfig:
+  en: 856023c1c9a57a74
+  zh: 0277ee8000a187c7
+/llm-package-reference/types-ts-core-types/llmresolvedmodelinfo-types-ts-llmresolvedmodelinfo:
+  en: a73f41d83c044d0a
+  zh: 35a5bbb80bc7130e
+/llm-package-reference/types-ts-core-types/systempromptupdate-types-ts-systempromptupdate:
+  en: 24db76eb707e5195
+  zh: a021e773d6861c4b

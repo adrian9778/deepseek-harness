@@ -68,6 +68,7 @@ packages/
   sandbox/        ← 进程隔离（bwrap/Landlock/Seatbelt）
   bundle/         ← 可安装 Profile Bundle
   boot/           ← CLI 启动胶水
+  team/           ← 子 Agent 树共享任务看板（任务板服务 + 模型任务工具）
   ...             ← 其他能力包（见 packages/README.md）
 ```
 

@@ -16,7 +16,7 @@ Ten hops at a glance: parse the command → load config → mount plugins → cr
 
 ### Hop 1: CLI entry → argument parsing
 
-**Source**: `apps/cli/src/bin.ts` +13-49, `apps/cli/src/args.ts` +146
+**Source**: `apps/cli/src/bin.ts` · runCli, `apps/cli/src/args.ts` · parseDshArgs
 
 ```
 进程启动
@@ -164,7 +164,7 @@ Once the Turn starts, it gathers materials first: claim the user message, assemb
 
 Materials ready, it fires a streaming request at the model. The reply does not arrive all at once; it streams back chunk by chunk:
 
-**Source**: `packages/core/agent-loop/src/agent.ts` +613, `packages/llm/llm/src/index.ts`, `packages/llm/llm-deepseek/src/`
+**Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.prepareRequest, `packages/llm/llm/src/index.ts`, `packages/llm/llm-deepseek/src/`
 
 ```
 // 准备 Call 配置（prepareRequest 内）
@@ -194,7 +194,7 @@ for await (const chunk of stream) {
 
 The model says "I need to see the directory", so its requested tool runs. One batch passes through four stations: pre-check → execute → post-process → log:
 
-**Source**: `packages/core/agent-loop/src/agent.ts` +586, `packages/core/tools/src/batch.ts` + `pipeline.ts`
+**Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.step, `packages/core/tools/src/batch.ts` · executeToolBatch, `packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
 
 Assume the model returned one tool call:
 
@@ -239,7 +239,7 @@ With tool results in the log, the model takes one more look at the whole picture
 
 The answer is out; the Turn wraps up, the runner prints the result, tears down the Agent, and unloads every plugin in reverse order:
 
-**Source**: `packages/core/agent-loop/src/agent.ts` +395-427
+**Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.turn +68~+100
 
 ```
 [Turn N End]
@@ -337,8 +337,8 @@ One last table: when you return to change code or investigate an issue, jump str
 
 | 阶段 | 关键源码 |
 |---|---|
-| 参数解析 | `apps/cli/src/args.ts` +146 |
-| 入口分派 | `apps/cli/src/bin.ts` +26-55 |
+| 参数解析 | `apps/cli/src/args.ts` · `parseDshArgs` |
+| 入口分派 | `apps/cli/src/bin.ts` · `runCli` |
 | Profile 启动 | `apps/cli/src/profile-boot.ts` runProfile |
 | Agent 创建 | `packages/core/agent-loop/src/index.ts` create/createAgent |
 | Turn/Step 驱动 | `packages/core/agent-loop/src/agent.ts` turn/step |

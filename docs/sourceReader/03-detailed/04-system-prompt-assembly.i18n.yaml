@@ -9,8 +9,8 @@
   en: b63a42ae62420e57
   zh: 5073d3e7abf49780
 /system-prompt-assembly/the-promptsection-type:
-  en: 8e16feb51b15078b
-  zh: 97187fbe04e9e40b
+  en: d372bcf44076b4ef
+  zh: 09ccc63e1951d13e
 /system-prompt-assembly/the-promptsection-type/built-in-section-positions-section-orders:
   en: b8b6ced0ec9a471e
   zh: aaf555947ba6600c
@@ -24,8 +24,8 @@
   en: 165d8df9a554ab28
   zh: e734f091275497a0
 /system-prompt-assembly/key-decisions-during-assembly/3-in-history-vs-head-update-modes:
-  en: cb64863576eccc03
-  zh: a472f43d5b17c069
+  en: 217b12fe465bb57d
+  zh: 700a2cc546cdf049
 /system-prompt-assembly/system-prompt-replacement-semantics:
   en: 6c6eee0a79d5683e
   zh: e4ebb52df66ff6af
@@ -33,5 +33,5 @@
   en: d1e76284cbae778e
   zh: e60ac7c60a626939
 /system-prompt-assembly/key-source-map:
-  en: 4debe59e3115c078
-  zh: 41d095712f017bd0
+  en: 80d2b4eece821451
+  zh: a879ca6f2b612484

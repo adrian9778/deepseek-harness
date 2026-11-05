@@ -67,7 +67,7 @@ Model 返回 tool_call
 
 注册一个工具要声明哪些东西？必填两项：输出声明（返回值长什么样）和执行函数；可选项负责超时、并行、UI 呈现。注意 `when`（条件可见性）不在这里，它是注册选项：
 
-**源码位置**：`packages/core/tools/src/contracts.ts` +26、`packages/core/tools/src/schema.ts` defineTool
+**源码位置**：`packages/core/tools/src/contracts.ts` · ToolDefinition、`packages/core/tools/src/schema.ts` · defineTool
 
 ```ts
 interface ToolDefinition extends ToolSchema {
@@ -108,7 +108,7 @@ interface ToolDefinition extends ToolSchema {
 
 写一个新工具时参数怎么声明？DSL 用一层受限的 JSON Schema 方言——够表达模型需要的类型，又不会写出执行器处理不了的复杂结构：
 
-**源码位置**：`packages/core/tools/src/schema.ts` defineTool
+**源码位置**：`packages/core/tools/src/schema.ts` · defineTool
 
 ```ts
 // 参数 Schema 规范
@@ -149,7 +149,7 @@ const readTool = defineTool({
 
 定义只是声明，真正把五阶段串起来的是执行管线。这一节先看服务入口，再看单次调用的十步流程：
 
-**源码位置**：`packages/core/tools/src/index.ts` execute、register、restrict；`packages/core/tools/src/pipeline.ts`
+**源码位置**：`packages/core/tools/src/index.ts` · ToolsService.execute / register / restrict、`packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
 
 ```ts
 class ToolsService extends Service {
@@ -221,24 +221,24 @@ class ToolsService extends Service {
 
 一批工具调用怎么排先后？规则：能并行的进有界并发池，必须独占的串行当路障，但日志里的顺序永远和模型要求的顺序一致：
 
-**源码位置**：`packages/core/tools/src/batch.ts` executeToolBatch
+**源码位置**：`packages/core/tools/src/batch.ts` · executeToolBatch
 
 ```ts
 async function executeToolBatch(
-  input: ToolBatchInput, pipeline, maxParallelToolCalls?,
+  input: ToolBatchInput, pipeline, maxParallel: () => number,
 ): Promise<ToolBatchResult> {
-  // 分离独占和并行工具：isConcurrencySafe(args) === true → parallel
+  // 分类：isConcurrencySafe(args) === true → parallel
   // 失败封闭：未声明或求值失败 → exclusive
-  const exclusive = calls.filter(c => pipeline.executionMode(c) === 'exclusive')
-  const concurrent = calls.filter(c => pipeline.executionMode(c) === 'parallel')
-
-  // 独占工具：串行执行（作为屏障）
-  for (const call of exclusive) {
-    await executeOne(call)
+  // 按模型顺序扫描未启动的调用，不预先分组：
+  while (next < planned.length) {
+    const mode = pipeline.executionMode(first.exec).kind
+    // exclusive → 单调用屏障（串行）；parallel → 取剩余调用组成并发池
+    const group = mode === 'parallel' ? planned.slice(next) : [first]
+    // 并发上限：input.maxParallelToolCalls 覆盖，否则读 executor 的 maxParallel()
+    await runGroup(pipeline, settlement, limit, group, mode, signal)
   }
-
-  // 并行工具：有界并发池，提交严格按模型顺序
-  await executeWithPool(concurrent, { maxParallel: maxParallelToolCalls })
+  // 池内每次启动前重新分类；变 exclusive 即断开本池、留作下一个屏障
+  // 结果与上下文严格按模型顺序提交（commitReady 只推进连续槽位）
 }
 ```
 
@@ -252,14 +252,14 @@ async function executeToolBatch(
 
 工具执行时拿到的不只是参数，还有一份"现场环境"：取消信号、调用 ID，以及两个特殊动作（推迟追加上下文、标记结束 Turn）：
 
-**源码位置**：`packages/core/tools/src/contracts.ts` +244
+**源码位置**：`packages/core/tools/src/contracts.ts` · ToolRunContext
 
 ```ts
 interface ToolRunContext extends ToolExecution {
-  /** 取消信号。execute() 必须 cooperative 检查此信号。 */
-  readonly signal: AbortSignal
-  /** 工具调用的唯一 ID，用于关联 request/response */
-  readonly callId: string
+  // 以下两项继承自 ToolExecution / ToolExecutionInput
+  // readonly signal: AbortSignal   取消信号。execute() 必须 cooperative 检查此信号。
+  // readonly callId: ToolCallId    工具调用的唯一 ID，用于关联 request/response
+
   /** 将上下文推迟到 tool/result 之后追加 */
   deferContext(context: UserMessage): void
   /** 将成功结果标记为结束当前 Turn */
@@ -271,14 +271,14 @@ interface ToolRunContext extends ToolExecution {
 
 ## 关键源码定位
 
-想直接跳进源码时用这张表，按功能直达文件和行号：
+想直接跳进源码时用这张表，按功能直达文件与符号：
 
 | 功能 | 源码文件 | 关键部分 |
 |---|---|---|
-| ToolDefinition 类型 | `packages/core/tools/src/contracts.ts` | +26 |
-| defineTool DSL | `packages/core/tools/src/schema.ts` | defineTool |
-| ToolsService 实现 | `packages/core/tools/src/index.ts` | ToolsService (+99) |
-| 执行管线事件 | `packages/core/tools/src/events.ts` | +1-60 |
-| 批量调度 | `packages/core/tools/src/batch.ts` | executeToolBatch (+50) |
-| JSON Schema 验证 | `packages/core/tools/src/json-schema.ts` | +1-全 |
-| UI 呈现 | `packages/core/tools/src/presentation.ts` | +1-全 |
+| ToolDefinition 类型 | `packages/core/tools/src/contracts.ts` | `ToolDefinition` |
+| defineTool DSL | `packages/core/tools/src/schema.ts` | `defineTool` |
+| ToolsService 实现 | `packages/core/tools/src/index.ts` | `ToolsService` |
+| 执行管线事件 | `packages/core/tools/src/events.ts` | `tools/pre-execute` … `tools/result` |
+| 批量调度 | `packages/core/tools/src/batch.ts` | `executeToolBatch` |
+| JSON Schema 验证 | `packages/core/tools/src/json-schema.ts` | `JsonSchemaNode`、`validateJsonSchemaValue` |
+| UI 呈现 | `packages/core/tools/src/presentation.ts` | `ToolCallView`、`ToolResultView` |

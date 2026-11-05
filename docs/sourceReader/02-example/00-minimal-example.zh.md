@@ -16,7 +16,7 @@
 
 ### 第 1 跳：CLI 入口 → 参数解析
 
-**源码位置**：`apps/cli/src/bin.ts` +13-49、`apps/cli/src/args.ts` +146
+**源码位置**：`apps/cli/src/bin.ts` · runCli、`apps/cli/src/args.ts` · parseDshArgs
 
 ```
 进程启动
@@ -164,7 +164,7 @@ Turn 开始后先备料：取用户消息、拼系统提示词、从日志推导
 
 材料齐了，向模型发起流式请求。回复不是一次性到达，而是一段一段流回来：
 
-**源码位置**：`packages/core/agent-loop/src/agent.ts` +613、`packages/llm/llm/src/index.ts`、`packages/llm/llm-deepseek/src/`
+**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.prepareRequest、`packages/llm/llm/src/index.ts`、`packages/llm/llm-deepseek/src/`
 
 ```
 // 准备 Call 配置（prepareRequest 内）
@@ -194,7 +194,7 @@ for await (const chunk of stream) {
 
 模型说"我要看目录"，于是执行它要的工具。一批调用统一过"预检 → 执行 → 后处理 → 记日志"四道工序：
 
-**源码位置**：`packages/core/agent-loop/src/agent.ts` +586、`packages/core/tools/src/batch.ts` + `pipeline.ts`
+**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.step、`packages/core/tools/src/batch.ts` · executeToolBatch、`packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
 
 假设模型返回了一个工具调用：
 
@@ -239,7 +239,7 @@ await ctx.tools.execute({
 
 答案出来了，Turn 收尾；Runner 打印结果、拆掉 Agent、反序卸载所有插件：
 
-**源码位置**：`packages/core/agent-loop/src/agent.ts` +395-427
+**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.turn +68~+100
 
 ```
 [Turn N End]
@@ -337,8 +337,8 @@ sequenceDiagram
 
 | 阶段 | 关键源码 |
 |---|---|
-| 参数解析 | `apps/cli/src/args.ts` +146 |
-| 入口分派 | `apps/cli/src/bin.ts` +26-55 |
+| 参数解析 | `apps/cli/src/args.ts` · `parseDshArgs` |
+| 入口分派 | `apps/cli/src/bin.ts` · `runCli` |
 | Profile 启动 | `apps/cli/src/profile-boot.ts` runProfile |
 | Agent 创建 | `packages/core/agent-loop/src/index.ts` create/createAgent |
 | Turn/Step 驱动 | `packages/core/agent-loop/src/agent.ts` turn/step |

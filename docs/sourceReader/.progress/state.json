@@ -1,0 +1,34 @@
+{
+  "library": "docs/sourceReader",
+  "lastSync": {
+    "date": "2026-11-05",
+    "note": "Synced to HEAD at sync time. Previous full-rewrite baseline is the 2026-11-03 sourceReader rewrite commit; resolve it with: git log -1 --format='%h %ad %s' -- docs/sourceReader/. Commit hashes are intentionally not stored here because verify-repository-references rejects hash literals in maintained files."
+  },
+  "spec": ".progress/UPDATE-SPEC.md",
+  "notation": "symbol+offset relative to the section anchor symbol; index tables are symbol-to-file only; approximate line counts (~N) allowed in module overview tables",
+  "docs": [
+    "README.md",
+    "01-framework/00-overview.md",
+    "01-framework/01-process-module-map.md",
+    "01-framework/02-data-flow.md",
+    "01-framework/03-cordis-plugin-system.md",
+    "02-example/00-minimal-example.md",
+    "03-detailed/00-agent-lifecycle.md",
+    "03-detailed/01-turn-step-flow.md",
+    "03-detailed/02-session-log.md",
+    "03-detailed/03-tool-execution.md",
+    "03-detailed/04-system-prompt-assembly.md",
+    "04-source/00-agent-loop.md",
+    "04-source/01-session.md",
+    "04-source/02-tools.md",
+    "04-source/03-cli-boot.md",
+    "04-source/04-llm.md"
+  ],
+  "bilingual": "every doc has a .zh.md pair; re-record hashes with node_modules/.bin/tsx scripts/verify-translation-pairing.ts --write <doc.md> after pnpm install has completed; avoid `pnpm run` wrappers while the dependency tree is being repaired",
+  "verifiedRefs": {
+    "exact": "agent.ts/inbox.ts/assistant-stream.ts/session surface+request-header+types/cli-boot/llm service methods/StreamChunk/GenerateOptions",
+    "shifted": "agent-loop index.ts -3 net lines (AgentLoop 290, init 328, create 667, createAgent 716, resume 752, dispose closure 547); tools index.ts ToolView 51; system-prompt tools() 551 assemble() 620",
+    "misattributed": "llm doc type sections pointed at wrong files: LlmCallConfig is call-config.ts:31, LlmResolvedModelInfo types.ts:454, SystemPromptUpdate types.ts:440",
+    "renamed": "session-telemetry-otel -> packages/telemetry/otel (@deepseek-ai/dsh-otel)"
+  }
+}

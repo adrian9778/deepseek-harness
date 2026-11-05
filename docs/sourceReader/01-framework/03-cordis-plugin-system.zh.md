@@ -217,7 +217,7 @@ Context 自己也有生命周期状态机，插件在加载/卸载时必须尊�
 
 Agent Loop 在 `INACTIVE_STATES`（`UNLOADING`、`DISPOSED`、`FAILED`）时拒绝创建新 Agent：
 
-Source: [`packages/core/agent-loop/src/index.ts`](../../../packages/core/agent-loop/src/index.ts) +1-5
+Source: [`packages/core/agent-loop/src/index.ts`](../../../packages/core/agent-loop/src/index.ts) · `INACTIVE_STATES`
 
 ```ts
 const INACTIVE_STATES: ReadonlySet<FiberState> = new Set([

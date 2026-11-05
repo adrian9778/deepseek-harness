@@ -47,38 +47,40 @@
 
 创建就是"开日志、建驱动、跑 setup、广播诞生"四件事。任何一步失败都有回滚保证，不会留下半成品：
 
-**入口**：`ctx.agents.create(options)`。**源码位置**：`packages/core/agent/src/index.ts` create/enter/announce、`packages/core/agent-loop/src/index.ts` create/createAgent/initializeAgent
+**入口**：`ctx.agents.create(options)`。**源码位置**：`packages/core/agent/src/index.ts` · AgentRegistry.create/enter/announce、`packages/core/agent-loop/src/index.ts` · AgentLoop.create/createAgent/initializeAgent
 
 ### 步骤分解
 
 ```
-1. 验证 FiberState
-   if (INACTIVE_STATES.has(ctx.fiber.state)) throw NEW_CONTEXT_REQUIRED
+1. 验证调用方 FiberState
+   ownerCtx.fiber.assertActive()   → 已卸载的 fiber 抛 INACTIVE_EFFECT
 
-2. 生成 sessionId（如未指定）
-   const sessionId = SessionId(randomUUID())
+2. 确定 sessionId（如未指定）
+   → 由调用方策略生成（如 headless runner 用 session-${randomUUID()}；
+     未传 id 时 SessionStore 兜底 session-N 递增）
 
 3. 创建 Session
    const session = ctx.sessions.prepare(sessionId, { meta, ... })
-     → 触发 session/created 事件
+     → 尚未发布，session/created 在第 5 步随 enter/announce 发布
 
 4. 创建 ReactLoopAgent
    const agent = new ReactLoopAgent(loopCtx, sessionId, options, session, projections, lastTurn)
 
-5. 执行 setup 回调（如有）
+5. 发布 Session 并执行 setup 回调（如有）
+   agent.ctx.sessions.enter(session)；sessions.announce(session)
    await setup(agentCtx, agent)
      → agentCtx 是 agent.scope.ctx，仅在此 Agent 作用域内生效
      → 可注册 tool、prompt section、listener 等
 
 6. 进入注册表
-   const detach = registry.enter(agent, owner)
+   const detach = registry.enter(agent)
 
 7. 发布 agent/created 事件
    await registry.announce(agent, source)
      → serial dispatch，监听器失败会拒绝创建
 
 8. 返回 AgentHandle
-   return { agent, dispose: () => teardown() }
+   return { agent, dispose }
 ```
 
 ### 回滚保证
@@ -95,7 +97,7 @@
 
 驱动是 Agent 的"心跳"：平时待命（idle），有活就跑（running），中间有个准备档（maintenance）。理解了三个相位和唤醒机制，主循环就一目了然：
 
-**入口**：`ReactLoopAgent` 内部的状态机循环。**源码位置**：`packages/core/agent-loop/src/agent.ts` +112（类声明）、+268（kick）、+327（turn）、+435（step）
+**入口**：`ReactLoopAgent` 内部的状态机循环。**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent（kick / turn / step）
 
 ### 相位（Phase）类型
 
@@ -154,23 +156,24 @@ async function drive() {
 
 ## 阶段 3：取消（Cancel）
 
-取消分四种原因，但路径都一样：发中止信号 → 清理 Inbox（可选）→ 等当前活动收尾。已产出的成果（如已流式输出的文本）一律保留：
+取消分四种原因，但路径都一样：清 Inbox（可选）→ 发中止信号 → 等当前活动收尾。已产出的成果（如已流式输出的文本）一律保留：
 
-**入口**：`handle.agent.cancel(cause, options?)`。**源码位置**：`packages/core/agent-loop/src/agent.ts` cancel、`packages/core/session/src/types.ts` +194（AgentCancelCause）
+**入口**：`handle.agent.cancel(cause, options?)`。**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.cancel、`packages/core/session/src/types.ts` · AgentCancelCause
 
 ### Cancel 语义
 
 ```ts
-interface AgentCancelCause {
-  kind: 'user' | 'parent' | 'disposed' | 'hook'
-  reason?: string
-}
+type AgentCancelCause =
+  | { kind: 'user' }
+  | { kind: 'parent' }
+  | { kind: 'hook'; reason: string }
+  | { kind: 'disposed' }
 ```
 
 - `'user'`：用户主动取消（如点击停止按钮），保留 Inbox 中的 pending 消息
 - `'parent'`：父 Agent 取消（子 Agent 被回收）
 - `'disposed'`：AgentHandle 被 dispose
-- `'hook'`：`agent/turn-stopping` 监听器触发的取消
+- `'hook'`：`agent/turn-stopping` 监听器触发的取消（唯一携带 `reason` 的变体）
 
 ### Cancel 执行路径
 
@@ -179,17 +182,17 @@ interface AgentCancelCause {
 ```
 cancel(cause, { keepInbox? })
   │
-  ├─► 设置 phase.abort.abort(cause)
-  │     → 当前正在进行的 LLM stream 收到 AbortSignal
-  │     → 当前正在执行的工具调用收到 exec.signal
-  │
   ├─► 如果 keepInbox 为 false（默认）：
   │     Inbox.clear()  → 丢弃所有 pending 消息
   │     → 触发 agent/inbox/discarded 事件
   │
-  └─► 等待当前活动完成（drain）
+  ├─► phase.abort.abort(cause)（仅当 phase != idle）
+  │     → 当前正在进行的 LLM stream 收到 AbortSignal
+  │     → 当前正在执行的工具调用收到 exec.signal
+  │
+  └─► 调用方 await whenIdle() 等待当前活动收尾（drain）
         → 已流式输出的文本保留在 assistant/message 中（interrupted: true）
-        → 未执行的工具调用不记录结果
+        → 未完成的工具调用补记合成 error 结果（真实结果不写入）
 ```
 
 ---
@@ -198,7 +201,7 @@ cancel(cause, { keepInbox? })
 
 销毁有严格的顺序：先停循环、再解作用域、最后关日志。顺序错了会报错——这是为了保证日志完整、没有遗漏的清理：
 
-**入口**：`handle.dispose()`。**源码位置**：`packages/core/agent/src/index.ts` enter/detach、`packages/core/agent-loop/src/index.ts` +500-545
+**入口**：`handle.dispose()`。**源码位置**：`packages/core/agent/src/index.ts` · AgentRegistry.enter/detach、`packages/core/agent-loop/src/index.ts` · AgentLoop.initializeAgent +33~+89（teardown/dispose 闭包）
 
 ### Dispose 步骤
 
@@ -215,13 +218,12 @@ cancel(cause, { keepInbox? })
    → 解开此 Agent 的所有 scoped registration
    → 触发的 disposer 按逆序执行
 
-4. registry detach
-   → 从 AgentRegistry 中移除
-   → 触发 agent/disposed（emit，监听器失败被包含）
+4. stored handle close
+   → persistence 后端收到 close（close 前 drain 已路由进 handle 的事件）
 
-5. session detach + stored handle close
-   → 触发 session/disposed 事件
-   → persistence 后端收到 close（close 前 drain）
+5. registry detach + session detach
+   → 从 AgentRegistry / SessionStore 移除
+   → 触发 agent/disposed、session/disposed（emit，监听器失败被包含）
 
 6. 释放 AgentHandle
    → id 可被重新使用（新 create 可用相同 id）
@@ -238,15 +240,15 @@ cancel(cause, { keepInbox? })
 
 ## 关键源码定位
 
-想直接跳进源码时用这张表，按操作直达文件和方法：
+想直接跳进源码时用这张表，按操作直达文件与符号：
 
 | 操作 | 源码文件 | 关键部分 |
 |---|---|---|
-| `create()` | `packages/core/agent/src/index.ts` | create/enter/announce |
-| `resume()` | `packages/core/agent/src/index.ts` | resume |
-| `cancel()` | `packages/core/agent-loop/src/agent.ts` | cancel 方法 |
-| `dispose()` | `packages/core/agent-loop/src/index.ts` | +500-545 |
-| Phase 状态机 | `packages/core/agent-loop/src/agent.ts` | +53-61（Phase 类型）+327（turn） |
-| `turn()` | `packages/core/agent-loop/src/agent.ts` | +327 |
-| `step()` | `packages/core/agent-loop/src/agent.ts` | +435 |
-| `whenIdle()` | `packages/core/agent-loop/src/agent.ts` | whenIdle 方法 |
+| `create()` | `packages/core/agent/src/index.ts` | `AgentRegistry.create`（工厂侧 `AgentLoop.createAgent`） |
+| `resume()` | `packages/core/agent/src/index.ts` | `AgentRegistry.resume` |
+| `cancel()` | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.cancel` |
+| `dispose()` | `packages/core/agent-loop/src/index.ts` | `AgentLoop.initializeAgent · teardown/dispose` |
+| Phase 状态机 | `packages/core/agent-loop/src/agent.ts` | `Phase` 类型 |
+| `turn()` | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.turn` |
+| `step()` | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.step` |
+| `whenIdle()` | `packages/core/agent-loop/src/agent.ts` | `ReactLoopAgent.whenIdle` |

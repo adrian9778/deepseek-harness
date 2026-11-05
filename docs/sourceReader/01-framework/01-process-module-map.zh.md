@@ -39,6 +39,8 @@ dsh (Node.js 进程)
 | `agent-default-model` | 部署默认模型选择 | `ctx.agentDefaultModel` |
 | `agent-loop` | 默认 Agent 驱动：Turn/Step 状态机 | `ctx.agentLoop` |
 | `agent-tool-presentation` | Agent 工具呈现模式选择器 | （无，preset 用） |
+| `tool-executor-native` | 原生工具执行器：模型直调每个可见工具，批内并行/屏障按模型顺序沉降 | （无，经 `ctx.tools` 挂载） |
+| `tool-executor-ptc` | PTC 工具执行器：经 `run_code` 程序调用工具，仅 `run_code` 可直调 | （无，经 `ctx.tools` 挂载） |
 
 ### LLM 能力组（llm/）
 
@@ -92,6 +94,8 @@ dsh (Node.js 进程)
 | `deliverables` | 对话交付物：显式文件交付 + 工作区变更记录 |
 | `compaction` | 上下文压缩：折叠旧事件，保留摘要 |
 | `subagent` | 子 Agent 委托：能力缝 + 模型委托工具 |
+| `team/agent-team` | 子 Agent 树共享任务看板：持久化任务板 + CAS 任务所有权 |
+| `team/tool-agent-team` | 模型任务工具：创建/认领/完成共享任务 + 共享板协作指引（新 Session 默认关闭） |
 | `workflow` | 工作流执行：PTC 进程引擎 + 模型 `workflow` 工具 |
 | `plan` | 计划协作状态 |
 | `todo` | 模型 `todo_write` 工具 |
@@ -108,7 +112,7 @@ dsh (Node.js 进程)
 | `storage` | 非 Session 存储中心 + 后端 |
 | `spill` | 工具结果溢出存储策略 |
 | `attachment` | 二进制附件：内容寻址存储 |
-| `session-telemetry-otel` | OTel 遥测上报通道 |
+| `telemetry/otel` | OTel 遥测上报通道：普通事件 + Session 日志两种 reporting channel，挂载即建通道、不发数据 |
 | `identity` | 匿名身份管理 |
 
 ### 扩展与交互组
@@ -119,6 +123,7 @@ dsh (Node.js 进程)
 |---|---|
 | `extensions` | Agent 运行时自修改：插件检查与热插拔 |
 | `mcp` | 外部 Model Context Protocol 服务器 |
+| `mcp/mcp-manager` | MCP server 舰队管理：`config.servers` + 插件注册双来源，逐条目挂 `dsh-mcp-client`，状态聚合/重启/探测 |
 | `skill` | Skill 能力：提供者注册表 + 模型目录/加载 |
 | `interaction` | 人机协作：审批/交互缝、权限预设、ask-user 工具 |
 | `credentials` | 凭证引用 + 凭证记录 + 授权流程 |

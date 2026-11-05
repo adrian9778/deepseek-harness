@@ -12,8 +12,8 @@
   en: 007638cbd5776d73
   zh: 58bfe51037b8fd71
 /minimal-runnable-example-one-headless-task/full-path-trace/hop-1-cli-entry-argument-parsing:
-  en: 98a1d90b0b46e5d0
-  zh: 3e1a8fa233a0a4a6
+  en: f55c690f44d2e732
+  zh: 22c6e82d26e86f4a
 /minimal-runnable-example-one-headless-task/full-path-trace/hop-2-profile-boot-load-configuration:
   en: 0d0f06b0708de4c7
   zh: eb98e79272321b0c
@@ -30,20 +30,20 @@
   en: a149ecc94185842a
   zh: f691e4421faf8abb
 /minimal-runnable-example-one-headless-task/full-path-trace/hop-7-llm-streaming-call:
-  en: 93af78ecdb4b1005
-  zh: 50ef0a4158cbc853
+  en: 43e2d44f864bda9e
+  zh: 63d7d537f6171110
 /minimal-runnable-example-one-headless-task/full-path-trace/hop-8-tool-execution:
-  en: d7dfe180b919209a
-  zh: ad95027bcec3cce4
+  en: 03f7a3e0ef1f6872
+  zh: 37078a667e784d6c
 /minimal-runnable-example-one-headless-task/full-path-trace/hop-9-second-step-the-model-continues-on-tool-results:
   en: 88df46bfaef2409a
   zh: f1cdaf250940d453
 /minimal-runnable-example-one-headless-task/full-path-trace/hop-10-turn-end-cleanup:
-  en: be056d208d2f316a
-  zh: c06e63dc22f1b2a2
+  en: 4ad2e2b74b7a0486
+  zh: 2b4bbeb581da2871
 /minimal-runnable-example-one-headless-task/full-sequence-diagram-mermaid:
   en: 166f21d161950432
   zh: 411dbebda7604f27
 /minimal-runnable-example-one-headless-task/key-source-quick-reference:
-  en: e58467958471a980
-  zh: 0982a74a9116417b
+  en: 3b79594e4f07f64f
+  zh: fbfc9de7024fc238

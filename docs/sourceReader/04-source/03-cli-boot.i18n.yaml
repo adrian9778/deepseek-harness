@@ -3,41 +3,41 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/sourceReader/04-source/03-cli-boot.md
 /cli-launch-path-reference:
-  en: a7e01a4ad085c7b6
-  zh: df0b682329364aca
+  en: 9822dde10abde55c
+  zh: 64cac0e38bbc81f5
 /cli-launch-path-reference/module-overview:
-  en: a0389b4d11683628
-  zh: 03e0c80bf31f835a
+  en: fb76bfec83314c5f
+  zh: e77d5ee867599a23
 /cli-launch-path-reference/bin-ts-the-main-entry:
   en: 46267a80560fd20a
   zh: 32b611818b82ab6f
-/cli-launch-path-reference/bin-ts-the-main-entry/runcli-options-26:
-  en: 419fb245d7c6e800
-  zh: 00a3296b23910df6
+/cli-launch-path-reference/bin-ts-the-main-entry/runcli-options-bin-ts-runcli:
+  en: 48b15e8b6f94b3d6
+  zh: 0bc831df7b6c0a9d
 /cli-launch-path-reference/args-ts-argument-parsing:
   en: d68e90dc79a84b00
   zh: 253b0e0f9439ffa8
-/cli-launch-path-reference/args-ts-argument-parsing/parsedshargs-argv-version-managedesktopprofile-146:
-  en: 1ef27a3809083a8a
-  zh: 99ee7ff7f20c01ab
+/cli-launch-path-reference/args-ts-argument-parsing/parsedshargs-argv-version-managedesktopprofile-args-ts-parsedshargs:
+  en: 9e370bda04234919
+  zh: 40863aba7fddbf95
 /cli-launch-path-reference/profile-boot-ts-profile-launch:
-  en: 24e349750892b72e
-  zh: 5fe109d7afc7e5f6
-/cli-launch-path-reference/profile-boot-ts-profile-launch/runprofile-options-profile-boot-ts-271:
-  en: 49ad7b38cfe338af
-  zh: eb68b426a65858db
-/cli-launch-path-reference/profile-boot-ts-profile-launch/initializeprofilefromdefault-name-fromdefaultprofile-home-108:
-  en: 196cebbcbe70e20a
-  zh: 78e12309725c102d
+  en: ddfbdbd38e917221
+  zh: 9a5201cc7624122e
+/cli-launch-path-reference/profile-boot-ts-profile-launch/runprofile-options-profile-boot-ts-runprofile:
+  en: 4c22a48ff0f70614
+  zh: f84fc4e0abbc5067
+/cli-launch-path-reference/profile-boot-ts-profile-launch/initializeprofilefromdefault-name-fromdefaultprofile-home-profile-boot-ts-initializeprofilefromdefault:
+  en: 4dea3e57764661ec
+  zh: ce9835f597a5f079
 /cli-launch-path-reference/startup-failure-handling:
   en: 27ccc274c49bb8ac
   zh: 5daee5cf79d43012
-/cli-launch-path-reference/startup-failure-handling/reportstartupfailure-error-context-write-startup-diagnostics-ts-34:
-  en: 7ded49f2f7b1b12b
-  zh: 2c7c5feefe3a1540
+/cli-launch-path-reference/startup-failure-handling/reportstartupfailure-error-context-write-startup-diagnostics-ts-reportstartupfailure:
+  en: 59322648c1d58b5b
+  zh: 28bf45c6819bddd0
 /cli-launch-path-reference/process-shutdown:
   en: dce9c51db79c2805
   zh: 371464107bc0c16b
-/cli-launch-path-reference/process-shutdown/createprocessshutdown-ctx-process-shutdown-ts-22:
-  en: e8af8f4665c2abcd
-  zh: e87aec5a65f06015
+/cli-launch-path-reference/process-shutdown/createprocessshutdown-dispose-forceexit-complete-timeoutms-process-shutdown-ts-createprocessshutdown:
+  en: 81197d097b27d4a8
+  zh: 99baea8a8be465ec

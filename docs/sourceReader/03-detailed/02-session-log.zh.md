@@ -55,7 +55,7 @@ Session 是一个 **append-only 事件日志**。所有模型可见的历史都�
 
 日志里每条记录长什么样、用什么标识？这节列出核心类型：品牌化的 ID（防拿错）、事件类型表（哪些事件存在）、Surface 事件（哪些会进模型历史）、Turn 结束原因（为什么停了）。
 
-**源码位置**：`packages/core/session/src/types.ts` +1-100
+**源码位置**：`packages/core/session/src/types.ts` · SessionId / SessionEventMap / SurfaceEventType / TurnEndReason
 
 ### SessionId 与 Sequence 品牌类型
 
@@ -109,6 +109,8 @@ Surface 事件是模型历史的一部分，接受替换操作（replacement）�
 
 ### TurnEndReason（Turn 结束原因）
 
+每个 Turn 结束时都写明"为什么停了"，排查问题时第一个看这里：
+
 ```ts
 type TurnEndReason =
   | { kind: 'completed' }         // 正常完成
@@ -126,83 +128,77 @@ type TurnEndReason =
 
 往日志里追加一条事件要过七道关。这样设计的原因：日志一旦写入就不可改，所以必须在入口把不合法的数据全部拦下：
 
-**源码位置**：`packages/core/session/src/index.ts` append、`packages/core/session/src/surface.ts`
+**源码位置**：`packages/core/session/src/index.ts` · Session.append、`packages/core/session/src/surface.ts` · SurfaceManager.validateNext
 
 ```
 session.append(type, data, opts?)
   │
-  ├─ [1] 类型检查
-  │     if (!isSessionEventType(type)) throw UNKNOWN_EVENT_TYPE
+  ├─ [1] 发布守卫
+  │     publicationEntry()  → 未发布的 Session、append 重入：直接拒绝
   │
-  ├─ [2] Surface 事件的额外验证
-  │     if (isSurfaceEventType(type)) {
-  │       if (!opts?.surfaceOp) throw MISSING_SURFACE_OP
-  │       if (opts.surfaceOp === 'replace') {
-  │         validateReplacement(event, surface, opts.surfaceOp)
-  │           → seq 范围必须在当前 surface 节点内
-  │           → 替换范围必须完整覆盖目标节点
-  │       }
-  │     }
-  │
-  ├─ [3] Lossless JSON 快照
+  ├─ [2] Lossless JSON 快照
   │     const snapshot = snapshotJsonValue(data)
-  │       → 递归遍历，对每个值：
-  │         - 调用 toJSON() （如果存在）
-  │         - 拒绝 BigInt（JSON 不支持）
-  │         - 拒绝循环引用（通过 WeakSet 检测）
+  │       → 迭代遍历，只接受 JSON 原始值与 plain object/array：
+  │         - 拒绝 BigInt / Symbol / 函数（JSON 不支持）
+  │         - 拒绝循环引用（祖先集合检测）
   │         - 拒绝稀疏数组
-  │         - 拒绝 -0（规范化为 0）
+  │         - 拒绝非有限数与 -0
   │         - 拒绝 exotic prototype 对象
-  │       → 返回深度冻结的副本
+  │       → 返回 detach 后的副本（deepFreeze 在第 3 步统一执行）
   │
-  ├─ [4] 分配 seq
-  │     const seq = SessionSeq(events.length)
+  ├─ [3] 构建事件（分配 seq + 冻结）
+  │     const event = deepFreeze({
+  │       type, seq: SessionSeq(log.length), time: Date.now(), data: snapshot,
+  │     })
   │
-  ├─ [5] 追加事件
-  │     events.push({ type, data: snapshot, seq })
-  │     deepFreeze(event)  ← 不可变
+  ├─ [4] 事件数据校验
+  │     validateSessionEventData(event)
+  │       → per-type 规则：developer 角色与 tool-addition/removal 配对、
+  │         request/header 字段约束、tool/result error 元数据
   │
-  ├─ [6] 刷新 Surface Manager
-  │     surfaceManager 应用 pendingPlan
-  │       → 追加操作：新增 surface 节点
-  │       → 替换操作：标记旧节点为 replaced，新增替换节点
-  │       → 更新 contentGeneration / replaceGeneration
+  ├─ [5] Surface 验证
+  │     surfaceManager.validateNext(event)
+  │       → surface 事件必须携带 surfaceOp；非 surface 事件禁止携带
+  │       → replace：seq 范围必须在当前 surface 节点内、完整覆盖目标节点、
+  │         sourceEventSeqs 引用全部被遮蔽节点
+  │       → node 0（system prompt）只能被恰指该节点的 system/message 改写
+  │
+  ├─ [6] 追加事件
+  │     log.push(event)
   │
   └─ [7] 触发事件
-        emit('session/event', event)  — 广播给所有监听器
+        emit('session/event', event)  — 广播给所有监听器（失败逐个包含）
+        → 第 5 步验证出的 surface plan 在下次读取时应用：
+          追加/替换节点，更新 contentGeneration / replaceGeneration
 ```
 
 ---
 
 ## deriveMessages() 推导逻辑
 
-模型看到的历史不是存的，是算的。推导有缓存：日志没变就直接返回上次结果，变了才重新折叠：
+模型看到的历史不是存的，是算的。推导有缓存：日志没变就直接返回上次结果，变了才增量折叠新增节点：
 
-**源码位置**：`packages/core/session/src/index.ts` deriveMessages、`packages/core/session/src/surface.ts` foldSurface
+**源码位置**：`packages/core/session/src/index.ts` · Session.deriveMessages、`packages/core/session/src/surface.ts` · deriveEventMessage / foldSurface
 
 ```
 session.deriveMessages()
   │
-  ├─ 如果 contentGeneration 未变 → 返回缓存的 messages
+  ├─ contentGeneration 未变且无新节点 → 返回缓存的 messages
   │
-  └─ 重新折叠 surface 事件：
-       foldSurface(events, projections)
-         │
-         ├─ 遍历所有 events
-         ├─ 对每个 surface 事件：
-         │   ├─ 应用注册的 messageProjection（插件自定义）
-         │   └─ 生成对应的 Message 对象
-         │       - system/message → { role: 'system', content }
-         │       - user/message   → { role: 'user', content }
-         │       - assistant/message → { role: 'assistant', content }
-         │       - tool/result    → { role: 'tool', content, tool_call_id }
-         │       - developer/message → { role: 'developer', content }
-         │
-         ├─ 处理 replacement：
-         │   - 被 replace 的旧节点从 messages 中移除
-         │   - 替换事件生成新的 Message 节点
-         │
-         └─ 返回新的 Message[]，缓存
+  └─ 增量折叠新增 surface 节点（冷读等价 foldSurface(events, projections)）：
+       ├─ 对每个新 surface 事件：
+       │   ├─ 应用注册的 messageProjection（插件自定义）
+       │   └─ 生成对应的 Message 对象
+       │       - user/message → 原样保留
+       │       - system / developer / assistant/message → 空内容派生为
+       │         null（不进入模型历史）
+       │       - tool/result → message
+       │
+       ├─ 处理 replacement：
+       │   - 被 replace 的旧节点从 messages 中移除
+       │   - 替换事件生成新的 Message 节点
+       │
+       └─ 返回新的 Message[]，缓存
 ```
 
 ---
@@ -235,7 +231,7 @@ $DSH_HOME/sessions/
 
 每个 Session 文件开头都有一份"档案"：版本号、创建时间、来源（子 Agent？fork？），读取时先看这个再决定怎么解析：
 
-**源码位置**：`packages/core/session/src/types.ts` +95
+**源码位置**：`packages/core/session/src/types.ts` · SessionHeader
 
 ```ts
 interface SessionHeader {
@@ -283,7 +279,7 @@ interface SessionHeader {
 
 Fork 把一个活着的 Session 从某个位置"切开复制"出一个新 Session：父 Session 继续跑，子 Session 带走之前的历史。典型用途是子 Agent 委托：
 
-**源码位置**：`packages/core/session/src/fork.ts` buildForkSeed、`packages/core/session/src/index.ts` SessionStore.fork
+**源码位置**：`packages/core/session/src/fork.ts` · buildForkSeed、`packages/core/session/src/index.ts` · SessionStore.fork
 
 ```
 ctx.sessions.fork(source, boundary?, childSessionId?)
@@ -291,9 +287,9 @@ ctx.sessions.fork(source, boundary?, childSessionId?)
   ├─ 验证 source 是 live Session
   ├─ 确定 cut point（默认：最后一个事件的 seq）
   ├─ buildForkSeed：复制 events[0..cut] 作为 seed
-  ├─ 追加 session/end-seed 标记（inheritedEventCount = cut）
-  ├─ 为 open step 补充缺失的 tool result
-  ├─ 追加 openTurnClosers（关闭父 session 的未完成 turn/step，cause 'forked'）
+  ├─ 追加 session/end-seed 标记（inheritedEventCount = cut + 1，含边界事件）
+  ├─ openTurnClosers 补记收尾（cause 'forked'）：
+  │     为 open step 补充缺失的 tool result，关闭未完成的 turn/step
   ├─ 创建新 Session（childSessionId 或自动生成）
   └─ 返回新 Session
 ```
@@ -307,15 +303,15 @@ Fork 后的父子 Session：
 
 ## 关键源码定位
 
-想直接跳进源码时用这张表，按功能直达文件和行号：
+想直接跳进源码时用这张表，按功能直达文件与符号：
 
 | 功能 | 源码文件 | 关键部分 |
 |---|---|---|
-| Session 类定义 | `packages/core/session/src/index.ts` | +525 |
-| append() 验证 | `packages/core/session/src/index.ts` | +806 |
-| deriveMessages() | `packages/core/session/src/index.ts` | +999 |
-| Surface 投影 | `packages/core/session/src/surface.ts` | SurfaceManager (+612) |
-| 类型定义 | `packages/core/session/src/types.ts` | +1-200 |
-| Fork | `packages/core/session/src/fork.ts` | buildForkSeed |
-| Request Header | `packages/core/session/src/request-header.ts` | +1-69 |
-| 修复 | `packages/core/session/src/repair.ts` | ToolCallRecovery (+105) |
+| Session 类定义 | `packages/core/session/src/index.ts` | `Session` |
+| append() 验证 | `packages/core/session/src/index.ts` | `Session.append` |
+| deriveMessages() | `packages/core/session/src/index.ts` | `Session.deriveMessages` |
+| Surface 投影 | `packages/core/session/src/surface.ts` | `SurfaceManager`、`foldSurface` |
+| 类型定义 | `packages/core/session/src/types.ts` | `SessionEventMap`、`SessionHeader`、`TurnEndReason` |
+| Fork | `packages/core/session/src/fork.ts` | `buildForkSeed` |
+| Request Header | `packages/core/session/src/request-header.ts` | `canonicalHeader / foldRequestHeader` |
+| 修复 | `packages/core/session/src/repair.ts` | `ToolCallRecovery` |

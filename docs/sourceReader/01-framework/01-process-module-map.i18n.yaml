@@ -12,8 +12,8 @@
   en: f7b3adc930beca4d
   zh: 951e562b3a3cca1e
 /process-and-module-map/package-groups-and-responsibilities-full-packages-tour/core-spine-core:
-  en: 0c3f3d009d778847
-  zh: d4ee940b79d52a22
+  en: 29b41dbb2e716159
+  zh: 7fce876d36489a44
 /process-and-module-map/package-groups-and-responsibilities-full-packages-tour/llm-family-llm:
   en: af3fee3554dc3ad8
   zh: a378b48cef912051
@@ -24,14 +24,14 @@
   en: 84c97aaae717c9c8
   zh: 9f669181a4c7156c
 /process-and-module-map/package-groups-and-responsibilities-full-packages-tour/business-logic:
-  en: f64204e3dcd5248b
-  zh: b9259a101de8ec82
+  en: 31119f4f66868f4d
+  zh: c9b8025933846ad8
 /process-and-module-map/package-groups-and-responsibilities-full-packages-tour/observability-and-storage:
-  en: 97fa7e7f6465a975
-  zh: 666ca0a318c7ca88
+  en: f147e85984fd7fa1
+  zh: 77efd544fb3865a0
 /process-and-module-map/package-groups-and-responsibilities-full-packages-tour/extensions-and-interaction:
-  en: c259a637c1d1c72e
-  zh: 5a0726f5577def4d
+  en: 2112b36a61c2811e
+  zh: 30c4adcc2f95fa13
 /process-and-module-map/package-groups-and-responsibilities-full-packages-tour/web-family:
   en: 3f76647a3bc8fcb1
   zh: bbd3157a201119e7

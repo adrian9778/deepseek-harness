@@ -217,7 +217,7 @@ The Context itself is also a lifecycle state machine, and plugins must respect i
 
 The Agent Loop refuses to create a new Agent while `INACTIVE_STATES` (`UNLOADING`, `DISPOSED`, `FAILED`) applies:
 
-Source: [`packages/core/agent-loop/src/index.ts`](../../../packages/core/agent-loop/src/index.ts) +1-5
+Source: [`packages/core/agent-loop/src/index.ts`](../../../packages/core/agent-loop/src/index.ts) · `INACTIVE_STATES`
 
 ```ts
 const INACTIVE_STATES: ReadonlySet<FiberState> = new Set([
