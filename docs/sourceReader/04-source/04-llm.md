@@ -1,36 +1,35 @@
-# llm package reference
+# llm 包源码逐函数解析
 
-English | [中文](04-llm.zh.md)
 
 llm 包是"和模型说话"的抽象层：上层只认 LlmRuntime 服务和 StreamChunk 流，下层各家 Provider（DeepSeek、Pi AI…）各自实现 LlmAdapter 接入。这一篇按文件拆开，重点讲服务的注册、流式调用和错误结构。源码位置按"符号 + 偏移"标注（`+0` = 符号定义行，`+N` = 符号体内第 N 行，闭区间）。
 
-## Module overview
+## 模块概览
 
 十三个文件：主服务、类型、调用配置、流组装、消息工厂、错误、重试策略等：
 
-**Source directory**: `packages/llm/llm/src/`
+**源码目录**：`packages/llm/llm/src/`
 
 | 文件 | 职责 | 行数 |
 |---|---|---|
-| `index.ts` | LlmRuntime Service、LlmAdapter 抽象类、LlmError | ~1222 |
+| `index.ts` | LlmRuntime Service、LlmAdapter 抽象类、LlmError | ~1237 |
 | `types.ts` | Message、StreamChunk、GenerateOptions 等核心类型 | ~606 |
 | `call-config.ts` | LlmCallConfig、callConfigEquals、markAgentLoopRequest | ~96 |
 | `assembler.ts` | BlockAssembler：chunk → ContentBlock | ~208 |
 | `message.ts` | freezeMessage、createAssistantMessage 等消息工厂 | ~307 |
 | `assistant-stream.ts` | AssistantStreamRecord 类型与流压缩/展开 | ~534 |
 | `content.ts` | 内容处理：图片投影、文件引用、工具更新 | ~510 |
-| `error.ts` | HarnessError 基类、错误码 | ~175 |
-| `retry-policy.ts` | ResolvedRetryPolicy、resolveRetryPolicy | ~195 |
+| `error.ts` | HarnessError 基类、错误码 | ~232 |
+| `retry-policy.ts` | ResolvedRetryPolicy、resolveRetryPolicy | ~201 |
 | `brand.ts` | ProviderRequestId 品牌类型 | ~76 |
-| `attribution.ts` | attributionHeaders() | ~68 |
+| `attribution.ts` | attributionHeaders() | ~90 |
 | `api-key.ts` | normalizeApiKey | ~41 |
-| `adapter-failure.ts` | normalizeLlmFailure | ~107 |
+| `adapter-failure.ts` | normalizeLlmFailure | ~108 |
 
 ---
 
-## index.ts — the LlmRuntime service
+## index.ts — LlmRuntime Service
 
-### The `LlmRuntime` class (index.ts · LlmRuntime)
+### `LlmRuntime` 类（index.ts · LlmRuntime）
 
 服务的本体：管 adapter 路由表、provider 目录和模型发现回调。继承 TypertRemoteService 使其可通过 JSON-RPC 远程调用（SDK 场景）：
 
@@ -44,7 +43,7 @@ export class LlmRuntime extends TypertRemoteService {
 
 `adapters` 是 provider → adapter 的路由表（所有按 provider 的查询都读它），`directory` 是"可配置但未必已激活"的 provider 元数据，`discoveries` 是按 settings 命名空间登记的端点探测回调。
 
-### `registerAdapter(providers, adapter)` (index.ts · LlmRuntime.registerAdapter)
+### `registerAdapter(providers, adapter)`（index.ts · LlmRuntime.registerAdapter）
 
 把 adapter 绑到一组 provider 路由上。关键是"原子替换"：先删旧再加新，中间无空窗期，不会出现半路由状态：
 
@@ -69,7 +68,7 @@ registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHa
 - 空数组合法（settings 清空后的 registration 可以持有零路由），但首次注册不行
 - 已 dispose 的 handle 调用 replace 抛 `REGISTRATION_DISPOSED`
 
-### `registerConfigurableProviders(entries)` (index.ts · LlmRuntime.registerConfigurableProviders)
+### `registerConfigurableProviders(entries)`（index.ts · LlmRuntime.registerConfigurableProviders）
 
 注册"可由用户激活"的 provider 元数据（设置界面里看到的那些）。它只登记目录，不绑 adapter：
 
@@ -89,7 +88,7 @@ registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): Dire
 - `registerAdapter`：直接绑定 adapter 实例，立即生效
 - `registerConfigurableProviders`：只注册元数据，adapter 由 settings 驱动动态注册
 
-### `stream(options)` (index.ts · LlmRuntime.stream)
+### `stream(options)`（index.ts · LlmRuntime.stream）
 
 流式调用的统一入口：进入 waterfall → 默认分支解析 adapter 并做请求投影 → 逐段 yield：
 
@@ -110,7 +109,7 @@ stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
 - `llm-retry` 包在此挂载重试包装器
 - 其他监听器可 replay、监控、或短路由
 
-### `prepareCall(config, signal, configure?)` (index.ts · LlmRuntime.prepareCall)
+### `prepareCall(config, signal, configure?)`（index.ts · LlmRuntime.prepareCall）
 
 发起请求前的"装备检查"：绑 adapter、填默认值、验证 reasoning effort，最后把配置冻结。关键是流绑定同一个 adapter registration，不允许中途换 adapter：
 
@@ -149,7 +148,7 @@ type PrepareCallSignature = (
 
 **关键不变量**：`preparedCall.stream()` 只允许派发一次（第二次抛 `INVALID_PREPARED_CALL`）；请求的 call-config 字段必须与 `config` 逐字段相等（`callConfigEquals`），否则同样抛 `INVALID_PREPARED_CALL`；派发始终使用 preparation 时捕获的 registration 与 `adapterCall.stream`，settings 变更不会中途切换 adapter。
 
-### `listModels(provider)` (index.ts · LlmRuntime.listModels)
+### `listModels(provider)`（index.ts · LlmRuntime.listModels）
 
 列出 provider 的模型清单，去重并验证元数据：
 
@@ -159,7 +158,7 @@ async listModels(provider: string): Promise<LlmModelInfo[]>
 
 调用 `adapter.listModels(provider)`，要求每条 `provider` 与路由一致、`id` / `name` 非空、`description` 为字符串，并按 `id` 去重；任何非法或重复条目抛 `INVALID_CATALOG`。返回的条目是脱钩副本（`inputModalities` 与 `badge` 都会复制）。目录成员资格只是建议，不约束核心路由。
 
-### `resolveModelInfo(provider, model)` (index.ts · LlmRuntime.resolveModelInfo)
+### `resolveModelInfo(provider, model)`（index.ts · LlmRuntime.resolveModelInfo）
 
 解析单个模型的完整元数据（上下文窗口、默认输出上限、reasoning 档位、输入模态、system prompt / tool 更新模式）：
 
@@ -167,7 +166,7 @@ async listModels(provider: string): Promise<LlmModelInfo[]>
 
 ---
 
-## The LlmAdapter abstract class (index.ts · LlmAdapter)
+## LlmAdapter 抽象类（index.ts · LlmAdapter）
 
 新 Provider 接入点：实现这个抽象类，注册进 LlmRuntime 即可。必须实现 stream()，其余可按需覆盖：
 
@@ -198,7 +197,7 @@ export abstract class LlmAdapter {
 
 ---
 
-## The LlmError class (index.ts · LlmError)
+## LlmError 类（index.ts · LlmError）
 
 模型调用失败的结构化表达。failure 可序列化、可存进 Session 日志，code 是稳定的机器可读错误码：
 
@@ -230,11 +229,11 @@ interface LlmFailure {
 
 ---
 
-## types.ts — core types
+## types.ts — 核心类型
 
 流式回复的最小单位是 StreamChunk（七种），请求参数集中在 GenerateOptions，调用配置和模型元数据分开建模：
 
-### `StreamChunk` (types.ts · StreamChunk)
+### StreamChunk（types.ts · StreamChunk）
 
 ```ts
 type StreamChunk =
@@ -249,7 +248,7 @@ type StreamChunk =
 
 `index` 关联同一块的交错 delta；`blockType` 是 `ContentBlockMap` 的键（文本、推理、图片、文件、tool-call、tool-addition、tool-removal），`block-end` 携带组装好的 `ContentBlock`；`tool-call-delta` 的参数是模型产出的原始 JSON 字符串。adapter 在终态 `finish` 之前发 `usage`，之后不再发任何 chunk。adapter 实现可以抛错，`LlmRuntime.stream()` 在暴露给消费者前把失败归一为终态 `error` / `aborted` finish。
 
-### `GenerateOptions` (types.ts · GenerateOptions)
+### GenerateOptions（types.ts · GenerateOptions）
 
 ```ts
 interface GenerateOptions<Purpose extends string = LlmRequestPurpose> {
@@ -271,7 +270,7 @@ interface GenerateOptions<Purpose extends string = LlmRequestPurpose> {
 
 `system` 只给一次性调用方：adapter 会把它映射到 provider 的 system 槽；loop 构造的请求把 system prompt 放在 `messages` 的首条 system 消息里，这里留空。`toolHistory` 是 Session 折叠出的工具史，省略时按完整声明发送；`sessionId` 由 loop 打戳用于 replay 游标；`purpose` 是辅助请求的分类，普通对话不设。
 
-### `LlmCallConfig` (call-config.ts · LlmCallConfig)
+### LlmCallConfig（call-config.ts · LlmCallConfig）
 
 ```ts
 interface LlmCallControls {
@@ -294,7 +293,7 @@ interface LlmCallConfigAdapterDefaults {
 
 这三个接口都在 `call-config.ts`：`LlmCallConfig` 的每个字段 1:1 对应同名 `GenerateOptions` 字段；`LlmCallConfigAdapterDefaults` 标记哪些字段是 adapter 物化的默认值。同文件的 `callConfigEquals` 做逐字段比较（`stop` 逐元素比），`markAgentLoopRequest` / `isAgentLoopRequest` 用进程内 `WeakSet` 记录 loop 构造的请求对象身份。
 
-### `LlmResolvedModelInfo` (types.ts · LlmResolvedModelInfo)
+### LlmResolvedModelInfo（types.ts · LlmResolvedModelInfo）
 
 ```ts
 interface LlmResolvedModelInfo extends LlmModelInfo {  // provider / id / name / description? / inputModalities? / badge?
@@ -308,7 +307,7 @@ interface LlmResolvedModelInfo extends LlmModelInfo {  // provider / id / name /
 
 `context.contextWindow` 是请求与回复合并的上下文上限；`defaultMaxTokens` 是调用方省略时物化的单请求输出上限；`systemPromptUpdate` 缺省表示只在请求头部读取 system 消息，`toolUpdate` 缺省表示每次请求都声明完整工具列表。
 
-### `SystemPromptUpdate` (types.ts · SystemPromptUpdate)
+### SystemPromptUpdate（types.ts · SystemPromptUpdate）
 
 ```ts
 type SystemPromptUpdate = 'in-history'

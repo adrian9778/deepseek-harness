@@ -1,13 +1,12 @@
-# Step flow inside one Turn
+# 一个 Turn 内 Step 的逐步流转
 
-English | [中文](01-turn-step-flow.zh.md)
 
-Turn and Step are the heartbeat of the Agent Loop: a Turn is "one conversation round", a Step is "one model request". This page starts with two definitions and a full state-machine diagram, then unpacks four key decision points, and closes with both event kinds in tables. After reading it you can say exactly where the Agent is at any moment and where it goes next.
+Turn 和 Step 是 Agent Loop 的心跳节律：Turn 是"一轮对话"，Step 是"问一次模型"。这一页先给两个定义和一张全状态机图，再拆开讲四个关键决策点，最后把两类事件列成表。读完你就能准确说出"任意时刻 Agent 正在哪个状态、下一步会去哪"。
 
-## Turn and Step definitions
+## Turn 与 Step 的定义
 
-- **Turn (对话轮)**：从用户提交输入到 Agent 完成响应的完整过程。包含 0 到 N 个 Step。
-- **Step (模型步骤)**：一次 LLM 请求 + 该请求触发的一组工具调用。
+- **Turn（对话轮）**：从用户提交输入到 Agent 完成响应的完整过程。包含 0 到 N 个 Step。
+- **Step（模型步骤）**：一次 LLM 请求 + 该请求触发的一组工具调用。
 
 ```
 Turn
@@ -18,9 +17,9 @@ Turn
 
 ---
 
-## The full state machine of one Turn
+## 一个 Turn 的完整状态机
 
-Read the diagram top to bottom: Turn start → claim input → ask permission → the Step loop (gather materials, ask the model, run tools) → Turn end. There are only two branches: does pre-step let it through, and does the model want more tools?
+整张图从上往下读：Turn 开始 → 取输入 → 询问是否放行 → Step 循环（备料、问模型、跑工具）→ Turn 结束。菱形判断只有两处：pre-step 放不放行、模型还要不要工具。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -133,13 +132,13 @@ Read the diagram top to bottom: Turn start → claim input → ask permission �
 
 ---
 
-## Key decision points
+## 关键决策点详解
 
-Four spots in the state machine deserve a closer look, one by one:
+状态机图里有四个值得停下来细看的位置，逐个拆开：
 
-### 1. The agent/pre-step decision
+### 1. agent/pre-step 决策
 
-**Source**: `packages/core/agent-loop/src/agent.ts` preStep
+**源码位置**：`packages/core/agent-loop/src/agent.ts` preStep
 
 ```ts
 type PreparedStep =
@@ -157,9 +156,9 @@ type PreparedStep =
 - **reject**：Turn 关闭，不产生 Step。触发 `turn/end` with reason `{ kind: 'blocked' }`
 - **enter**：进入 Step。`startsRequestSeries: true` 表示这是一个新的模型请求系列（如模型配置发生变化）
 
-### 2. Request series (请求系列)
+### 2. 请求系列（Request Series）
 
-一个 Turn 内可能包含多个 Step，这些 Step 分为不同的 **request series**（请求系列）。把它理解为"同一套模型配置下连续的几问"：模型配置变了、或历史被替换了，就开一个新系列，请求头也重写一次：
+一个 Turn 内可能包含多个 Step，这些 Step 分为不同的 **request series**（请求系列）。可以把它理解为"同一套模型配置下连续的几问"：模型配置变了、或者历史被替换了，就开一个新系列，请求头也重写一次：
 
 ```
 Turn N
@@ -176,11 +175,11 @@ Turn N
 
 Header 只在新系列开始时写一次，后续 Step 继承最新 header。
 
-### 3. Tool parallelism
+### 3. 工具并行执行
 
 一批工具调用怎么排顺序？规则是：能并行的进并发池，必须独占的当路障，但提交给日志的顺序永远和模型要求的顺序一致：
 
-**Source**: `packages/core/tools/src/batch.ts` executeToolBatch
+**源码位置**：`packages/core/tools/src/batch.ts` executeToolBatch
 
 ```ts
 // 每次调用前按 isConcurrencySafe(args) 重新分类
@@ -190,7 +189,7 @@ Header 只在新系列开始时写一次，后续 Step 继承最新 header。
 // abort 时为未启动的调用补合成 skip 结果
 ```
 
-### 4. Cancellation inside a Step
+### 4. 取消对 Step 的影响
 
 取消不打断"已经发生的"，只叫停"还没发生的"：已流出的文本保留，未完成的调用收到合成收尾，Turn 以 aborted 落幕：
 
@@ -214,11 +213,11 @@ cancel() 在 Step 执行中：
 
 ---
 
-## Event type summary
+## 事件类型总结
 
-一个 Turn 走完，留下了哪些"案底"？分两类：持久化的 Session 事件（写入日志、重启后还在）和 Live 事件（只在本次进程内广播，供 UI 和插件协作）。
+一个 Turn 走完，留下了哪些"案底"？分两类：持久化的 Session 事件（写入日志、重启后还在）和 Live 事件（只在本次进程内广播，用于 UI 和插件协作）。
 
-### Durable Session events (持久化)
+### Durable Session 事件（持久化）
 
 | 事件类型 | 写入时机 | 模型可见？ |
 |---|---|---|
@@ -235,7 +234,7 @@ cancel() 在 Step 执行中：
 | `request/header` | 请求头快照 | 否 |
 | `request/context` | 请求上下文变化 | 否 |
 
-### Live Agent events (非持久化)
+### Live Agent 事件（非持久化）
 
 这一类事件不进日志，只在本进程内广播，是插件挂接 Agent 行为的主要入口：
 
@@ -255,7 +254,7 @@ cancel() 在 Step 执行中：
 
 ---
 
-## Key source map
+## 关键源码定位
 
 想直接跳进源码时用这张表，按概念直达文件与符号：
 

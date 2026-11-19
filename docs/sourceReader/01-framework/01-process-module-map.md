@@ -1,10 +1,9 @@
-# Process and module map
+# 进程/模块划分与职责
 
-English | [中文](01-process-module-map.zh.md)
 
-## Top-level process structure
+## 顶层进程结构
 
-dsh has one process entry: the `dsh` CLI (`apps/cli/src/bin.ts`). The Profile selects the role this process plays.
+dsh 只有一个进程入口：`dsh` CLI（`apps/cli/src/bin.ts`）。你敲的每个命令都进同一个入口，不同的 Profile 决定这个进程接下来扮演什么角色：
 
 ```
 dsh (Node.js 进程)
@@ -17,17 +16,17 @@ dsh (Node.js 进程)
   └── profile: plugin    → 插件管理命令（不是应用启动）
 ```
 
-Every Profile shares the same CLI source; they differ only in which Bundle layers start Cordis.
+所有 Profile 共享同一份 CLI 源码，差异仅在于选哪组 Bundle 层来启动 Cordis。
 
 ---
 
-## Package groups and responsibilities (full packages/ tour)
+## 包分组与职责（packages/ 分组全览）
 
-Group details live in [packages/README.md](../../../packages/README.md); the tables below list the packages on the core path by group, one line per package saying what it does.
+分组细节见 [packages/README.md](../../../packages/README.md)；下表按组列出核心链路上的包，每行说明"这个包是干嘛的"。
 
-### Core spine (core/)
+### 核心脊柱组（core/）
 
-In one sentence: this group is the skeleton of "one conversation" — log, tools, prompt, and Agent all live here.
+一句话：这组包就是"一次对话"本身的骨架——日志、工具、提示词、Agent，全在这里。
 
 | 包 | 职责 | 对外服务键 |
 |---|---|---|
@@ -42,9 +41,9 @@ In one sentence: this group is the skeleton of "one conversation" — log, tools
 | `tool-executor-native` | 原生工具执行器：模型直调每个可见工具，批内并行/屏障按模型顺序沉降 | （无，经 `ctx.tools` 挂载） |
 | `tool-executor-ptc` | PTC 工具执行器：经 `run_code` 程序调用工具，仅 `run_code` 可直调 | （无，经 `ctx.tools` 挂载） |
 
-### LLM family (llm/)
+### LLM 能力组（llm/）
 
-In one sentence: this group "talks to models" — a unified abstract service with adapters for each provider (DeepSeek, Pi AI, ...).
+一句话：这组包负责"和模型说话"——抽象出统一的服务，再把各家 Provider（DeepSeek、Pi AI…）适配上来。
 
 | 包 | 职责 |
 |---|---|
@@ -56,9 +55,9 @@ In one sentence: this group "talks to models" — a unified abstract service wit
 | `llm-retry` | 请求失败重试包装器 |
 | `token-meter` | Token 用量计量 |
 
-### Shell family (shell/)
+### Shell 能力组（shell/）
 
-In one sentence: this group "runs commands" — from the model's `bash`/`pwsh` tool calls to real process launch, isolation, and reaping.
+一句话：这组包负责"跑命令"——从模型发出的 `bash`/`pwsh` 工具调用，到真实进程的启动、隔离与回收。
 
 | 包 | 职责 |
 |---|---|
@@ -70,9 +69,9 @@ In one sentence: this group "runs commands" — from the model's `bash`/`pwsh` t
 | `tool-bash` / `tool-pwsh` | 模型看到的 `bash`/`pwsh` 工具 |
 | `tool-bash-persistent` / `tool-pwsh-persistent` | 持久 Shell 会话工具 |
 
-### Execution and isolation
+### 执行与隔离组
 
-In one sentence: this group is the "safety belt" — every capability that touches the real world (processes, terminals, remote hosts, sandboxing) is funneled through here.
+一句话：这组包是"安全带"——凡是会触碰真实世界的能力（进程、终端、远程、沙箱）都在这里收口。
 
 | 包 | 职责 |
 |---|---|
@@ -82,9 +81,9 @@ In one sentence: this group is the "safety belt" — every capability that touch
 | `terminal` | 持久 PTY 终端服务 |
 | `ptc-runtime` | PTC（可编程工具调用）执行能力 |
 
-### Business logic
+### 业务逻辑组
 
-In one sentence: this group implements the Agent's "higher behaviors" — goals, plans, context compaction, subagent delegation, workflows.
+一句话：这组包实现 Agent 的"高级行为"——记目标、做计划、压缩上下文、委派子 Agent、跑工作流。
 
 | 包 | 职责 |
 |---|---|
@@ -102,9 +101,9 @@ In one sentence: this group implements the Agent's "higher behaviors" — goals,
 | `preset` | 每个 Session 的 Agent 组成（从 preset cordis.yml） |
 | `guard` | 循环卫生守卫：重复调用提醒 + 工具超时 |
 
-### Observability and storage
+### 可观测与存储组
 
-In one sentence: this group makes history "findable and durable" — search past Sessions, store non-session data, meter token usage.
+一句话：这组包负责"找得回来、存得住"——检索历史 Session、存非会话数据、算 token 用量。
 
 | 包 | 职责 |
 |---|---|
@@ -115,9 +114,9 @@ In one sentence: this group makes history "findable and durable" — search past
 | `telemetry/otel` | OTel 遥测上报通道：普通事件 + Session 日志两种 reporting channel，挂载即建通道、不发数据 |
 | `identity` | 匿名身份管理 |
 
-### Extensions and interaction
+### 扩展与交互组
 
-In one sentence: this group is "the interface to people and the outside world" — approval prompts, external tools (MCP), Skills, credentials, and settings.
+一句话：这组包负责"人和外界的接口"——审批弹窗、外部工具（MCP）、Skill、凭证与设置。
 
 | 包 | 职责 |
 |---|---|
@@ -129,9 +128,9 @@ In one sentence: this group is "the interface to people and the outside world" �
 | `credentials` | 凭证引用 + 凭证记录 + 授权流程 |
 | `settings` | 用户设置文件提供者 |
 
-### Web family
+### Web 能力组
 
-In one sentence: this group lets the Agent "read web pages, control the computer, drive a browser".
+一句话：这组包让 Agent 能"看网页、控电脑、开浏览器"。
 
 | 包 | 职责 |
 |---|---|
@@ -139,9 +138,9 @@ In one sentence: this group lets the Agent "read web pages, control the computer
 | `computer-use` | 桌面 Provider 独占注册 |
 | `browser-use` | 浏览器 Provider 独占注册 |
 
-### Infrastructure
+### 基础设施组
 
-In one sentence: this group is "the utilities" — boot, RPC, filesystem, LSP, background jobs, the SDK server, and other general foundations.
+一句话：这组包是"水电煤"——启动、RPC、文件系统、LSP、后台任务、SDK 服务器等通用底座。
 
 | 包 | 职责 |
 |---|---|
@@ -158,16 +157,16 @@ In one sentence: this group is "the utilities" — boot, RPC, filesystem, LSP, b
 | `host` | Web GUI Host 服务：目录选择、应用启动、插件清单 |
 | `context` | 模型可见的请求上下文（工作区指令、时间上下文） |
 | `workspace` | 工作区实体 |
-| `document` | Host Office-to-PDF 转换 |
+| `document` | Office 文档处理：Host Office-to-PDF 转换 + 模型 `tool-office` 工具 |
 | `experimental` | 评估中的能力，无产品支持承诺 |
 | `test-support` | 测试基础设施（testkits、replay、Loader smokes） |
 | `util` | 零依赖底层工具（Branded 类型、路径辅助、超时等） |
 
 ---
 
-## Module dependencies (core path)
+## 模块间依赖关系（核心链路）
 
-Who depends on whom, in which direction — one diagram tells it all (from the entry downward, the lower the more foundational):
+谁依赖谁、依赖方向朝哪，这张图一图看尽（从入口往下，越靠下越底层）：
 
 ```
 apps/cli (入口)
@@ -184,17 +183,17 @@ apps/cli (入口)
             └─ ...
 ```
 
-**Key dependency directions** (these four tell you what a change will ripple into):
-- `agent-loop` → `session`、`tools`、`llm`、`system-prompt`（消费这些服务）
-- `agent` → 独立于 `agent-loop`（允许替换驱动）
-- `tools` → 不依赖 `session`，但执行结果由 agent-loop 写入 session
-- `session` → 不依赖其他核心包（自包含事件源）
+**关键依赖方向**（读懂这四条，就能判断改动会波及谁）：
+- `agent-loop` → `session`、`tools`、`llm`、`system-prompt`（消费这些服务，见其 `inject` 清单）
+- `agent` → 独立于 `agent-loop`（允许替换驱动；`AgentLoop` 实现 `AgentFactory`，反向不依赖）
+- `tools` → 类型上引用 `session` 的消息类型（`UserMessage`、`SessionSeq`）与 `session-projection`，但不消费 `ctx.sessions` 服务；执行结果由 agent-loop 写入 session
+- `session` → 运行时依赖 `scope`（作用域原语 `scopeOf`/`scopeTarget`），类型上引用 `llm` 的消息类型（`Message`、`ToolHistory`）；事件源本身自包含，不依赖其他核心包的服务
 
 ---
 
-## Inputs and outputs
+## 输入输出总结
 
-What each core component "eats and emits" — handy for troubleshooting by tracing a hop:
+每个核心组件"吃什么、吐什么"，对接排障时按图索骥：
 
 | 组件 | 输入 | 输出 |
 |---|---|---|

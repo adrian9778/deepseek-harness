@@ -1,21 +1,20 @@
-# tools package reference
+# tools 包源码逐函数解析
 
-English | [中文](02-tools.zh.md)
 
 tools 包管两件事：工具的"花名册"（注册、限制、查找）和"安检流水线"（单次调用的五阶段管线、批量调度）。这一篇按文件拆开，重点讲 ToolsService 的方法和 defineTool DSL 的编译过程。
 
-## Module overview
+## 模块概览
 
 九个文件：主服务、契约、DSL、管线、批调度、执行器、事件、Schema 验证、UI 呈现：
 
-**Source directory**: `packages/core/tools/src/`
+**源码目录**：`packages/core/tools/src/`
 
 | 文件 | 职责 | 行数 |
 |---|---|---|
 | `index.ts` | ToolsService、注册表、执行入口 | ~412 |
-| `contracts.ts` | ToolDefinition、ToolExecution、决策类型 | ~391 |
+| `contracts.ts` | ToolDefinition、ToolExecution、决策类型 | ~418 |
 | `schema.ts` | defineTool DSL、ValueSchemaSpec、projectToolSchema | ~646 |
-| `pipeline.ts` | ToolExecutionPipeline：单次调用 5 阶段管线 | ~771 |
+| `pipeline.ts` | ToolExecutionPipeline：单次调用 5 阶段管线 | ~794 |
 | `batch.ts` | executeToolBatch：分组 + 有界并发池 | ~285 |
 | `executor.ts` | ToolExecutor 契约 + ToolBatchInput/Result | ~102 |
 | `events.ts` | tools/* 事件声明 | ~58 |
@@ -24,7 +23,7 @@ tools 包管两件事：工具的"花名册"（注册、限制、查找）和"�
 
 ---
 
-## index.ts — the ToolsService
+## index.ts — ToolsService
 
 ### Service declaration (`ToolsService`)
 
@@ -36,7 +35,7 @@ declare module '@deepseek-ai/cordis' {
 
 `ToolsService extends Service`：构造时 `super(ctx, 'tools')`，`static inject = ['systemPrompt']`（构造时注册工具 schema provider，由所选 executor 的 `describe()` 产出）。别名导出 `ToolRuntime`。执行器由 `setExecutor()` 挂载（`tool-executor-native` / `tool-executor-ptc`）。`static Config` 的 `mode`、`maxParallelSubCalls` 都是 `z.never()`：旧配置键在加载时即报错，挂载 executor 才是现在的做法。
 
-### The ToolLayer class (`ToolLayer`)
+### ToolLayer 类 (`ToolLayer`)
 
 每层作用域一个 ToolLayer，装着该层的工具和限制：
 
@@ -52,7 +51,7 @@ class ToolLayer implements ScopeLayer {
 
 守卫不在 ToolLayer 里：同级的 `GuardLayer` 单独一层（`AnonymousEntries<ToolGuard>`），由 `ToolsService.guard()` 注册、`ToolsService.checkGuards()` 在 pre-execute 之后按全局层 + 作用域链逐个求值，返回第一个拒绝原因。
 
-### The ToolView interface (`ToolView`)
+### ToolView 接口 (`ToolView`)
 
 给模型看的"工具橱窗"：可见的、注册过的、可被限制的三个视图分开维护（`ToolsService.view()` 单次层遍历推导）：
 
@@ -115,7 +114,7 @@ schemas(scope?: ScopeKey, toolSet?: ResolvedToolSet): ToolSchema[]
 
 **返回**：每个可见工具一份深拷贝 schema，仅模型可见字段（`name`、`description`、`parameters`，`deferLoading` 为 `true` 时保留）。`output`、`execute`、`projectContent` 等绝不泄露（`projectToolSchema` 白名单）。
 
-### `execute(input)` (index.ts · ToolsService.execute) — the execution entry
+### `execute(input)` (index.ts · ToolsService.execute) — 核心执行入口
 
 ```ts
 async execute(input: ToolBatchInput): Promise<ToolBatchResult>
@@ -167,7 +166,7 @@ get(name: string, scope?: ScopeKey, toolSet?: ResolvedToolSet): ToolDefinition |
 
 ---
 
-## schema.ts — the defineTool DSL
+## schema.ts — defineTool DSL
 
 ### `defineTool(options)` (schema.ts · defineTool)
 
@@ -199,7 +198,7 @@ function defineTool<const S extends ParameterSchemaSpec, const O extends ValueSc
 
 ---
 
-## Key error types
+## 关键错误类型
 
 排查时按 code 定位：
 
@@ -212,7 +211,7 @@ function defineTool<const S extends ParameterSchemaSpec, const O extends ValueSc
 
 ---
 
-## PTC mode notes
+## PTC 模式相关
 
 PTC（可编程工具调用）是另一条执行路径：模型写代码，代码内部再调度工具。`run_code` 是保留名，内部调用的 Schema 不落日志。
 

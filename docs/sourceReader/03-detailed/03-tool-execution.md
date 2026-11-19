@@ -1,10 +1,9 @@
-# The tool execution pipeline
+# 工具执行完整管线
 
-English | [中文](03-tool-execution.zh.md)
 
 模型说"帮我跑个命令"，这条命令要经过怎样的安检才能落地？答案是固定的五阶段管线：预检（可拒绝）→ 守卫（不可逆政策）→ 执行（可超时重试）→ 后检（可拦截结果）→ 记日志。这一页按这条管线展开，附工具定义结构、DSL 写法和并行调度规则，末尾是源码定位表。
 
-## Pipeline overview
+## 工具管线概览
 
 每个工具调用经过固定的 5 阶段管线，可以把它想成机场安检：值机（放行与否）→ 安检门（硬性规定）→ 登机（真正执行）→ 落地检查（结果审查）→ 入档：
 
@@ -63,11 +62,11 @@ Model 返回 tool_call
 
 ---
 
-## The ToolDefinition structure
+## defineTool 定义结构
 
 注册一个工具要声明哪些东西？必填两项：输出声明（返回值长什么样）和执行函数；可选项负责超时、并行、UI 呈现。注意 `when`（条件可见性）不在这里，它是注册选项：
 
-**Source**: `packages/core/tools/src/contracts.ts` · ToolDefinition, `packages/core/tools/src/schema.ts` · defineTool
+**源码位置**：`packages/core/tools/src/contracts.ts` · ToolDefinition、`packages/core/tools/src/schema.ts` · defineTool
 
 ```ts
 interface ToolDefinition extends ToolSchema {
@@ -104,11 +103,11 @@ interface ToolDefinition extends ToolSchema {
 
 ---
 
-## The defineTool DSL
+## defineTool DSL
 
 写一个新工具时参数怎么声明？DSL 用一层受限的 JSON Schema 方言——够表达模型需要的类型，又不会写出执行器处理不了的复杂结构：
 
-**Source**: `packages/core/tools/src/schema.ts` · defineTool
+**源码位置**：`packages/core/tools/src/schema.ts` · defineTool
 
 ```ts
 // 参数 Schema 规范
@@ -145,11 +144,11 @@ const readTool = defineTool({
 
 ---
 
-## The ToolsService pipeline implementation
+## ToolRegistry 执行管线实现
 
 定义只是声明，真正把五阶段串起来的是执行管线。这一节先看服务入口，再看单次调用的十步流程：
 
-**Source**: `packages/core/tools/src/index.ts` · ToolsService.execute / register / restrict, `packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
+**源码位置**：`packages/core/tools/src/index.ts` · ToolsService.execute / register / restrict、`packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
 
 ```ts
 class ToolsService extends Service {
@@ -217,11 +216,11 @@ class ToolsService extends Service {
 
 ---
 
-## Parallel and exclusive tool scheduling
+## 并行与独占工具调度
 
 一批工具调用怎么排先后？规则：能并行的进有界并发池，必须独占的串行当路障，但日志里的顺序永远和模型要求的顺序一致：
 
-**Source**: `packages/core/tools/src/batch.ts` · executeToolBatch
+**源码位置**：`packages/core/tools/src/batch.ts` · executeToolBatch
 
 ```ts
 async function executeToolBatch(
@@ -248,11 +247,11 @@ async function executeToolBatch(
 
 ---
 
-## The tool run context (ToolRunContext)
+## 工具调用上下文（ToolRunContext）
 
 工具执行时拿到的不只是参数，还有一份"现场环境"：取消信号、调用 ID，以及两个特殊动作（推迟追加上下文、标记结束 Turn）：
 
-**Source**: `packages/core/tools/src/contracts.ts` · ToolRunContext
+**源码位置**：`packages/core/tools/src/contracts.ts` · ToolRunContext
 
 ```ts
 interface ToolRunContext extends ToolExecution {
@@ -269,7 +268,7 @@ interface ToolRunContext extends ToolExecution {
 
 ---
 
-## Key source map
+## 关键源码定位
 
 想直接跳进源码时用这张表，按功能直达文件与符号：
 

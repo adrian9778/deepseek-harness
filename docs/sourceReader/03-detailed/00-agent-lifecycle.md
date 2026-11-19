@@ -1,12 +1,11 @@
-# Agent lifecycle: create → drive → finish
+# Agent 创建到完成的完整生命周期
 
-English | [中文](00-agent-lifecycle.zh.md)
 
-An Agent's life has exactly four stages: create → drive → cancel → dispose. This page draws out "who does what when, and what happens on failure" for each stage, with a source-location table at the end. The state-machine diagram up top is the global map; the four sections below expand it piece by piece.
+一个 Agent 从诞生到销毁只有四个阶段：创建 → 驱动 → 取消 → 销毁。这一页给每个阶段画清楚"谁在什么时候做什么、失败会怎样"，末尾附一张源码定位表。开头的状态机图是全局地图，后面四节逐段展开。
 
-## Agent lifecycle state machine
+## Agent 生命周期状态机
 
-The global picture first: an Agent's whole life is cycling between IDLE (standing by) and RUNNING (working) until disposed:
+先看全局：一个 Agent 的一生就是在 IDLE（待命）和 RUNNING（干活）之间打转，直到被 dispose：
 
 ```
                     ┌──────────────┐
@@ -43,13 +42,13 @@ The global picture first: an Agent's whole life is cycling between IDLE (standin
 
 ---
 
-## Phase 1: Create
+## 阶段 1：创建（Create）
 
-Creation is four jobs: open the log, build the driver, run setup, announce the birth. Any step that fails rolls back cleanly, never leaving a half-built Agent:
+创建就是"开日志、建驱动、跑 setup、广播诞生"四件事。任何一步失败都有回滚保证，不会留下半成品：
 
-**Entry**: `ctx.agents.create(options)`. **Source**: `packages/core/agent/src/index.ts` · AgentRegistry.create/enter/announce, `packages/core/agent-loop/src/index.ts` · AgentLoop.create/createAgent/initializeAgent
+**入口**：`ctx.agents.create(options)`。**源码位置**：`packages/core/agent/src/index.ts` · AgentRegistry.create/enter/announce、`packages/core/agent-loop/src/index.ts` · AgentLoop.create/createAgent/initializeAgent
 
-### Step breakdown
+### 步骤分解
 
 ```
 1. 验证调用方 FiberState
@@ -83,23 +82,23 @@ Creation is four jobs: open the log, build the driver, run setup, announce the b
    return { agent, dispose }
 ```
 
-### Rollback guarantees
+### 回滚保证
 
-If the setup callback or registration fails, the system cleans the scene as if nothing had happened:
-- the session is closed
-- the scope is unwound
-- every effect registered during setup is disposed
-- `agent/created` is not announced (announce never ran to completion)
+如果 setup 回调或注册失败，系统会像什么都没发生过一样清干净现场：
+- Session 被 close
+- Scope 被 unwind
+- 所有 setup 期间注册的 effect 被清理
+- 不发布 agent/created（announce 从未完成）
 
 ---
 
-## Phase 2: Drive
+## 阶段 2：驱动（Drive）
 
-Driving is the Agent's "heartbeat": standing by (idle) when there is no work, working (running) when there is, with a preparation gear (maintenance) in between. Once you know the three phases and the wake mechanism, the main loop reads itself:
+驱动是 Agent 的"心跳"：平时待命（idle），有活就跑（running），中间有个准备档（maintenance）。理解了三个相位和唤醒机制，主循环就一目了然：
 
-**Entry**: the `ReactLoopAgent` state machine loop. **Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent（kick / turn / step）
+**入口**：`ReactLoopAgent` 内部的状态机循环。**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent（kick / turn / step）
 
-### The Phase type
+### 相位（Phase）类型
 
 ```ts
 type Phase =
@@ -109,58 +108,64 @@ type Phase =
 ```
 
 - `idle`：等待 Inbox 中有输入
-- `maintenance`：准备阶段（AbortController 已创建但未开始 Turn）
+- `maintenance`：正在执行本地维护作业（`runMaintenance`）；期间收到的唤醒被闩锁，作业结束后若 inbox 仍有待办才重新唤醒驱动
 - `running`：正在执行 Turn/Step
 
-The three message entry points map to three delivery targets: `followup` delivers to the next turn, `steer` slips into the next step, `inject` stores without waking.
+三种消息入口对应三个投递目标：`followup` 投给下一轮、`steer` 插进下一步、`inject` 只入库不唤醒。
 
-### Wake mechanism
+### 唤醒机制
 
 ```
-followup(message)  →  Inbox.append(message, target='next-turn')
-steer(message)     →  Inbox.append(message, target='next-step')
+followup(message)  →  Inbox.append(message, target='next-turn') + 唤醒
+steer(message)     →  Inbox.append(message, target='next-step') + 唤醒
 inject(context)    →  Inbox.append(message, target='next-step', wake=false)
 
-当 phase == idle 时，append 会自动触发 maintenance → running 转换
-当 phase != idle 时，wakeRequested = true，下次循环边界会检查
+唤醒按当前相位分三种处置（wakeDriver）：
+  phase == idle      → 直接进入 running，启动驱动循环
+  phase == maintenance → 闩锁 wakeRequested = true，维护作业结束后重放
+  phase == running   → 驱动自己认领队列，无需唤醒
 ```
 
-### Driver loop in pseudocode
+### 主循环伪代码
 
-把三个相位串起来，主循环其实只有三种状态各做一件事：
+把三个相位串起来，主循环的核心是"唤醒即驱动、空闲即等待"：
 
 ```ts
-async function drive() {
-  while (phase.kind !== 'disposed') {
-    if (phase.kind === 'idle') {
-      await waitForWake()       // 等待 Inbox 有消息
-      startMaintenance()        // 创建 AbortController
-    }
+// wakeDriver：唤醒的唯一入口，按相位决定处置
+function wakeDriver(wakeAfterAbort = false): void {
+  if (phase.kind === 'idle') {
+    // 直接进入 running，启动 kick 循环
+    setPhase({ kind: 'running', abort: new AbortController(), turn: lastTurn, step: 0 })
+    withInitiator(this, () => kick())
+  } else if (phase.kind === 'maintenance') {
+    // 维护作业在跑：闩锁唤醒，作业结束后重放
+    phase.wakeRequested = true
+  }
+  // running：驱动自己认领队列，无需额外唤醒
+}
 
-    if (phase.kind === 'maintenance') {
-      if (!wakeRequested) continue  // 等待新的唤醒
-      startRunning()                 // 进入 Turn 循环
+// kick：驱动主循环，逐 Turn 推进直到 inbox 清空
+async function kick(): Promise<void> {
+  while (phase.kind === 'running') {
+    const turnResult = await runTurn()   // 打开 Turn → 循环 Step → 写 turn/end
+    if (!inbox.hasPending) {
+      setPhase({ kind: 'idle', lastTurn: turnResult.turn })  // 回到待命
+      return
     }
-
-    if (phase.kind === 'running') {
-      const turnResult = await runTurn()
-      // turnResult 决定下一步：
-      //   'completed' → 检查是否有更多 pending，若有继续，否则 idle
-      //   'cancelled' → 退出，进入 disposed
-    }
+    // 还有待办：保持 running，继续下一轮 Turn
   }
 }
 ```
 
 ---
 
-## Phase 3: Cancel
+## 阶段 3：取消（Cancel）
 
-Cancellation has four causes but one path: clear the Inbox (optional) → raise the abort signal → wait for current activity to wind down. Everything already produced (such as streamed text) is always kept:
+取消分四种原因，但路径都一样：清 Inbox（可选）→ 发中止信号 → 等当前活动收尾。已产出的成果（如已流式输出的文本）一律保留：
 
-**Entry**: `handle.agent.cancel(cause, options?)`. **Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.cancel, `packages/core/session/src/types.ts` · AgentCancelCause
+**入口**：`handle.agent.cancel(cause, options?)`。**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.cancel、`packages/core/session/src/types.ts` · AgentCancelCause
 
-### Cancel semantics
+### Cancel 语义
 
 ```ts
 type AgentCancelCause =
@@ -175,7 +180,7 @@ type AgentCancelCause =
 - `'disposed'`：AgentHandle 被 dispose
 - `'hook'`：`agent/turn-stopping` 监听器触发的取消（唯一携带 `reason` 的变体）
 
-### Cancel execution path
+### Cancel 执行路径
 
 取消永远走同一条路：中止信号 → 清 Inbox（可选）→ 等收尾：
 
@@ -197,15 +202,15 @@ cancel(cause, { keepInbox? })
 
 ---
 
-## Phase 4: Dispose
+## 阶段 4：销毁（Dispose）
 
-Disposal follows a strict order: stop the loop first, unwind the scope next, close the log last. Out-of-order disposal fails loudly — the order guarantees a complete log and no missed cleanup:
+销毁有严格的顺序：先停循环、再解作用域、最后关日志。顺序错了会报错——这是为了保证日志完整、没有遗漏的清理：
 
-**Entry**: `handle.dispose()`. **Source**: `packages/core/agent/src/index.ts` · AgentRegistry.enter/detach, `packages/core/agent-loop/src/index.ts` · AgentLoop.initializeAgent +33~+89 (teardown/dispose closures)
+**入口**：`handle.dispose()`。**源码位置**：`packages/core/agent/src/index.ts` · AgentRegistry.enter/detach、`packages/core/agent-loop/src/index.ts` · AgentLoop.initializeAgent +33~+89（teardown/dispose 闭包）
 
-### Dispose steps
+### Dispose 步骤
 
-六步依次执行，每步都在为下一步铺路：
+六步依次执行，每一步都在为下一步铺路：
 
 ```
 1. agent.cancel({ kind: 'disposed' }, { keepInbox: !ready })
@@ -229,18 +234,18 @@ Disposal follows a strict order: stop the loop first, unwind the scope next, clo
    → id 可被重新使用（新 create 可用相同 id）
 ```
 
-### Dispose ordering guarantees
+### Dispose 顺序保证
 
-Why this order? Each step closes off one class of "something can still write here":
-1. **Stop the loop first**: no further Session appends
-2. **Unwind the scope next**: no further effect registration
-3. **Close the session last**: all events have been processed
+为什么是这个顺序？每一步都封死一类"还能往里写东西"的可能：
+1. **先停 Loop**：确保不会再有新的 Session append
+2. **再解 Scope**：确保不会再有新的 effect 注册
+3. **最后关 Session**：确保所有事件已处理完毕
 
 ---
 
-## Key source map
+## 关键源码定位
 
-When you want to jump straight into the source, this table goes from operation to file and symbol:
+想直接跳进源码时用这张表，按操作直达文件与符号：
 
 | 操作 | 源码文件 | 关键部分 |
 |---|---|---|

@@ -1,26 +1,25 @@
-# Cordis plugin system basics
+# Cordis 插件系统基础
 
-English | [中文](03-cordis-plugin-system.zh.md)
 
-> Cordis is the plugin framework vendored under `vendor/`. Everything in dsh is a plugin — model adapters, the tool registry, the Session log, the Agent Loop itself.
+> Cordis 是 vendored 到 `vendor/` 的插件框架。dsh 的一切都是插件——包括模型适配器、工具注册表、Session 日志、Agent Loop 本身。
 
-Before reading dsh source you must understand Cordis, because dsh has no "functions you call directly" — every capability is installed as a plugin, reached through ctx, and coordinated through events. This page explains the mechanics with five concepts plus one lifecycle; every rule has a corresponding implementation in `vendor/cordis/`.
+读 dsh 源码前必须先懂 Cordis，因为 dsh 里没有一个"直接调用的函数"——所有能力都靠插件装进来、通过 ctx 取用、靠事件协作。这一页用五个概念 + 一条生命周期讲清它的玩法，每条规则都能在 `vendor/cordis/` 里找到对应实现。
 
 ---
 
-## Five core concepts
+## 五个核心概念
 
-| Concept | In one sentence |
+| 概念 | 一句话 |
 |---|---|
-| Plugin | One functional unit installed into the system |
-| Context | The "service repository" shared by all functional units |
-| Typed Events | The "broadcast station" between functional units |
-| Waterfall | An event pipeline that can be intercepted and rewritten station by station |
-| Registrations are Effects | Everything installed can be uninstalled automatically |
+| Plugin | 装进系统的一个功能单元 |
+| Context | 所有功能单元共享的"服务仓库" |
+| Typed Events | 功能单元之间的"广播电台" |
+| Waterfall | 可以逐站拦截、改写的事件流水线 |
+| Registrations are Effects | 装上去的东西都能自动卸下来 |
 
-### 1. Plugin
+### 1. Plugin（插件）
 
-A Plugin is an object implementing the `Service` interface. It can be a function or a `Service` subclass:
+Plugin 是实现 `Service` 接口的对象。可以是函数或 `Service` 子类：
 
 ```ts
 // 函数式插件
@@ -39,9 +38,9 @@ class MyPlugin extends Service {
 }
 ```
 
-### 2. Context
+### 2. Context（上下文）
 
-The Context is the service repository. Plugins reach other services through `ctx.<key>`:
+Context 是服务的仓库。插件通过 `ctx.<key>` 访问其他服务：
 
 ```ts
 ctx.sessions.create(sessionId, options)   // 创建 Session
@@ -50,11 +49,11 @@ ctx.llm.stream(options)                   // 调用 LLM
 ctx.agents.create(options)                // 创建 Agent
 ```
 
-**Key design**: plugins never import each other; they decouple through ctx keys.
+**关键设计**：插件之间不直接导入，通过 ctx key 解耦。
 
-### 3. Typed Events
+### 3. Typed Events（类型化事件）
 
-Services communicate through events instead of calling each other: one plugin "broadcasts" something, and interested plugins each listen. Event types come from TypeScript declaration merging; a misspelled event name fails at compile time:
+服务间通信靠事件而不是互相调用：某个插件"广播"一件事，关心的插件各自监听。事件类型用 TypeScript 声明合并定义，写错事件名编译期就报错：
 
 ```ts
 // 在某个包的 types.ts 中声明
@@ -65,7 +64,7 @@ declare module '@deepseek-ai/cordis' {
 }
 ```
 
-The five dispatch modes:
+五种分发模式：
 
 | 模式 | 是否 await | 顺序 | 有返回值？ | 典型用途 |
 |---|---|---|---|---|
@@ -75,13 +74,13 @@ The five dispatch modes:
 | `serial` | 是 | 顺序 | 是 | 串行策略检查 |
 | `bail` | 否 | 顺序，首个 bail 值终止 | 是 | 权限否决 |
 
-### 4. Waterfall semantics
+### 4. Waterfall 语义
 
-Waterfall is the most special of the five dispatch modes: the event flows through every listener like an assembly line, and each station may rewrite the result or short-circuit outright. This is the bedrock of dsh's interception logic such as permission checks and content rewriting.
+Waterfall 是五个分发模式里最特殊的一个：事件像流水线一样逐站流过每个监听器，每一站都可以改写结果或直接短路。这是 dsh 实现"权限检查、内容改写"这类拦截逻辑的基石。
 
-A Waterfall listener receives `(...args, next)` and picks one of two actions:
-- Calling `next(result)` passes the (possibly rewritten) result to the next listener
-- Returning `newValue` directly short-circuits; later listeners only see the new value
+Waterfall 监听器接收 `(...args, next)`，两个动作二选一：
+- 调用 `next(result)` → 将（可能改写的）结果传给下一个监听器
+- 直接 `return newValue` → 短路，后续监听器只看到新值
 
 ```ts
 ctx.on('tools/pre-execute', (call, next) => {
@@ -92,9 +91,9 @@ ctx.on('tools/pre-execute', (call, next) => {
 })
 ```
 
-### 5. Registrations are effects
+### 5. Registrations are Effects（注册是可逆效果）
 
-Everything mounts through `ctx.effect()` or `ctx.on()` and is rolled back automatically at unload:
+所有挂载通过 `ctx.effect()` 或 `ctx.on()`，卸载时自动回滚：
 
 ```ts
 ctx.effect(() => {
@@ -108,7 +107,7 @@ ctx.effect(() => {
 
 ---
 
-## Plugin lifecycle
+## 插件生命周期
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -124,18 +123,18 @@ ctx.effect(() => {
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Key constraints**:
-- Dependencies declared in `inject` must load before the current plugin
-- Returned disposers run in reverse order at unload time
-- An unload failure does not release dependent projections early
+**关键约束**：
+- `inject` 声明的依赖必须先于当前插件加载
+- 返回的 disposer 函数在卸载时按逆序调用
+- 卸载失败不会提前释放依赖的投影（projection）
 
 ---
 
-## Plugin examples in dsh
+## dsh 中的 Plugin 示例
 
-### Tool service (tools/)
+### 工具服务（tools/）
 
-Source: [`packages/core/tools/src/index.ts`](../../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts`](../../../packages/core/tools/src/index.ts)，事件声明在 [`packages/core/tools/src/events.ts`](../../../packages/core/tools/src/events.ts)，管线触发在 [`packages/core/tools/src/pipeline.ts`](../../../packages/core/tools/src/pipeline.ts)
 
 ```ts
 export class ToolsService extends Service {
@@ -143,31 +142,38 @@ export class ToolsService extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'tools')
-
-    // 注册工具执行事件管线
-    ctx.on('tools/pre-execute', async (exec, next) => { ... })
-    ctx.on('tools/execute', async (exec, next) => { ... })
-    ctx.on('tools/post-execute', async (exec, result, next) => { ... })
-    ctx.on('tools/result', (exec, result) => { ... })
   }
 
   register(definition, options) { ... }   // 注册工具，返回 disposer
   restrict(filter) { ... }                // 限制可见工具，返回 disposer
-  async execute(input) { ... }            // 批量执行入口，委托给 executor
+  async execute(input) { ... }            // 批量执行入口，委托给 ToolExecutionPipeline
 }
 ```
 
-### LLM service (llm/llm)
+`tools/*` 是一组 waterfall 扩展点：**服务侧**在管线里用 `ctx.waterfall('tools/pre-execute', ...)`、`ctx.waterfall('tools/execute', ...)`、`ctx.waterfall('tools/post-execute', ...)` 逐站触发（见 `ToolExecutionPipeline`），**消费者侧**用 `ctx.on('tools/pre-execute', (exec, next) => ...)` 注册监听器来拦截或改写。事件类型本身在 `events.ts` 里用声明合并定义。
+
+### LLM 服务（llm/llm）
 
 Source: [`packages/llm/llm/src/index.ts`](../../../packages/llm/llm/src/index.ts)
 
+`LlmRuntime` 是挂载在 `ctx.llm` 的服务，负责 Provider 适配器的注册与路由：
+
 ```ts
 export class LlmRuntime extends TypertRemoteService {
-  registerAdapter(providers, adapter) { ... }   // 绑定 adapter 实例，原子替换路由
-  registerConfigurableProviders(entries) { ... } // 注册可由 settings 激活的 provider 元数据
-  async prepareCall(config, signal, configure?) { ... } // 绑定 adapter 并应用默认值
-  async *stream(options) { ... }                 // llm/stream waterfall 内委托 adapter
-  listProviders() { ... }
+  registerAdapter(providers, adapter) { ... }        // 绑定 adapter 实例，原子替换路由
+  registerConfigurableProviders(entries) { ... }     // 注册可由 settings 激活的 provider 元数据
+  listProviders() { ... }                            // 列出已注册 provider
+}
+```
+
+实际的模型调用由 `LlmAdapter` 承担（每个 Provider 一个适配器实例），驱动侧调的是它：
+
+```ts
+export abstract class LlmAdapter {
+  listModels() { ... }                                // 列出该 provider 可用模型
+  resolveModel(model) { ... }                         // 解析模型标识
+  async prepareCall(provider, model, signal) { ... }  // 绑定调用并应用默认值
+  abstract stream(options): AsyncIterable<StreamChunk>  // 流式调用
 }
 ```
 
@@ -175,7 +181,7 @@ export class LlmRuntime extends TypertRemoteService {
 
 ## Service Definition / Provider / Consumer 三角色
 
-This is the core dsh architecture pattern (called a **Seam**). Think of it as "a power socket": the definer specifies the socket shape (the interface), the implementer builds appliances to that shape (the implementation), and the consumer just plugs in and uses it (the call) — the three never know each other, yet they work together:
+这是 dsh 架构的核心模式（称为 **Seam**，能力缝）。把它想象成"电源插座"：定义方规定插孔形状（接口），实现方按形状生产电器（实现），使用方只管插上去用电（调用）——三方互不认识，却能协同工作：
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -198,13 +204,13 @@ This is the core dsh architecture pattern (called a **Seam**). Think of it as "a
 └─────────────────────────────────────────────────────────┘
 ```
 
-A Seam is complete only when all three roles are present; missing any one, the capability seam has not formed.
+一个 Seam 必须同时具备这三个角色才算完整。缺少任何一个，能力缝就没有形成。
 
 ---
 
 ## FiberState（上下文状态机）
 
-The Context itself is also a lifecycle state machine, and plugins must respect it while loading and unloading. When you may register new things and when the system is "closing its doors", this table tells you:
+Context 自己也有生命周期状态机，插件在加载/卸载时必须尊重它。什么时候能注册新东西、什么时候系统在关门谢客，看这张表就知道：
 
 | State | 含义 |
 |---|---|
@@ -215,7 +221,7 @@ The Context itself is also a lifecycle state machine, and plugins must respect i
 | `UNLOADING` | 正在卸载，禁止新注册 |
 | `DISPOSED` | 完全清理完毕 |
 
-The Agent Loop refuses to create a new Agent while `INACTIVE_STATES` (`UNLOADING`, `DISPOSED`, `FAILED`) applies:
+Agent Loop 在 `INACTIVE_STATES`（`UNLOADING`、`DISPOSED`、`FAILED`）时拒绝创建新 Agent：
 
 Source: [`packages/core/agent-loop/src/index.ts`](../../../packages/core/agent-loop/src/index.ts) · `INACTIVE_STATES`
 

@@ -1,36 +1,35 @@
-# Architecture overview
+# 项目整体架构总览
 
-English | [中文](00-overview.zh.md)
 
-This page answers one question: what is dsh, and what is it made of? After reading it you will know how the system starts, which core parts exist, and what happens to one task from input to output. First contact with the project starts here; for a finer module breakdown, continue with [01-process-module-map.md](01-process-module-map.md).
-
----
-
-## One-sentence description
-
-DeepSeek Harness (dsh) is a plugin-based Agent runtime framework. You pick a **Profile** with the `dsh` CLI (a "launch menu", such as `web` or `headless`), the framework installs the **Bundle** plugin layers named by that menu, and the result is a complete Agent system: it records **Sessions** (conversation logs), runs the **Agent Loop** (multi-round inference), calls **LLMs**, and executes **Tools**.
+这一页回答一个问题：dsh 这个项目到底是什么、由哪几块组成。读完你会知道它怎么启动、有哪些核心部件、一条任务从输入到输出经历了什么。第一次接触项目从这里开始；想看更细的模块划分，接着读 [01-process-module-map.md](01-process-module-map.md)。
 
 ---
 
-## The three abstractions
+## 一句话描述
 
-The whole system rests on three concepts. Once you understand them, no later source reading will leave you lost.
+DeepSeek Harness（简称 dsh）是一个基于插件架构的 Agent 运行时框架。你用 `dsh` 命令行选一个 **Profile**（可以理解为"启动套餐"，比如 `web`、`headless`），框架按套餐装好一组 **Bundle** 插件层，拼出一个完整的 Agent 系统：记 **Session**（对话日志）、跑 **Agent Loop**（多轮推理循环）、调 **LLM**（大模型）、执行 **Tools**（工具）。
 
-### 1. Profile (launch menu)
+---
 
-A Profile decides "which plugins this launch installs". Each Profile is a directory under `$DSH_HOME/profiles/<name>`; its `package.json` declares an ordered `bundles` list in the `dsh.profile` field, and the user can fine-tune it with an own `cordis.patch.yml` overlay.
+## 三大抽象概念
 
-| Built-in Profile | When to use it |
-|---|---|
-| `web` | You want a graphical interface: the Agent runs in a browser |
-| `headless` | Run one task and exit: fits scripts and automation |
-| `sdk` | Use the Agent as a service: JSON-RPC server mode |
-| `sdk-minimal` | Same, but trimmed of the full base tree |
-| `acp` | ACP (Agent Client Protocol) server for automation clients |
+整座系统建立在三个概念上。理解了它们，后面的源码阅读都不会迷路。
 
-### 2. Bundle (plugin layer)
+### 1. Profile（启动套餐）
 
-A Bundle is "one installable layer of plugins"; an npm package declares `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` in its `package.json`. A Profile stacks Bundles layer by layer: the bottom layer is always `dsh-base` (model access, tool set, Session persistence, sandbox, and permission policy all live here), and further layers stack on demand.
+Profile 决定"这次启动要装哪些插件"。Profile 模板声明在 `packages/util/official-bundles/src/bundles.ts` · `PROFILE_TEMPLATES`，每个 Profile 给出有序的 Bundle 清单；启动时由 `packages/boot/app-boot` 解析到 `$DSH_HOME/profiles/<name>` 目录，目录内 `package.json` 的 `dsh.profile` 字段声明有序 `bundles` 列表，另外用户还可以用自己的 `cordis.patch.yml` 覆盖层做微调（`PROFILE_PATCH_FILENAME` = `cordis.patch.yml`）。
+
+| 内置 Profile | 装什么 | 什么时候用 |
+|---|---|---|
+| `web` | `dsh-base` + `dsh-web-app` | 想要图形界面：浏览器里跑 Agent |
+| `headless` | `dsh-base` + `dsh-headless` | 跑完一条任务就退出：适合脚本和自动化 |
+| `sdk` | `dsh-base` + `dsh-sdk-app` | 把 Agent 当服务用：JSON-RPC 服务器模式 |
+| `sdk-minimal` | 仅 `dsh-sdk-minimal`（不含完整 base 树） | 同上，但裁掉了完整的 base 树 |
+| `acp` | `dsh-base` + `dsh-acp-app` | 给自动化客户端用的 ACP（Agent Client Protocol）服务器 |
+
+### 2. Bundle（插件层）
+
+Bundle 是"一层可以安装的插件包"，npm 包在 `package.json` 中声明 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`。Profile 把 Bundle 一层层叠起来：最底下永远是 `dsh-base`（模型接入、工具集、Session 持久化、沙箱、权限策略都在这层），上面再按需叠加。
 
 ```
 Profile: web
@@ -38,24 +37,26 @@ Profile: web
       └─ dsh-base       ← 核心：LLM + 工具 + Session + 沙箱 + 权限
 ```
 
-### 3. Session (conversation log)
+### 3. Session（对话日志）
 
-The Session is the core data structure of the whole system: an **append-only event log** that records everything that happened in the conversation — what the user said (`user/message`), what the model replied (`assistant/message`), what tools produced (`tool/result`), what the system inserted (`system/message`).
+Session 是整个系统的核心数据结构：一份**只追加、不修改**的事件日志（append-only），把对话里发生过的每件事都记下来——用户说了什么（`user/message`）、模型回了什么（`assistant/message`）、工具跑出了什么（`tool/result`）、系统插了什么话（`system/message`）。
 
-Key design: the conversation history the model sees is **not stored as a second copy**; it is **computed fresh** from the log on every request (`Session.deriveMessages()`). The log is the single source of truth; everything else is a projection of it.
+关键设计：模型看到的对话历史**不单独存一份**，而是每次请求时从这份日志**现算**出来（`packages/core/session/src/index.ts` · `Session.deriveMessages`）。日志是唯一事实来源，别的都是它的投影。
 
 ---
 
-## Module map
+## 模块地图
 
 ```
 apps/cli/src/
-  bin.ts              ← CLI 入口：解析参数，分派到 profile-boot / plugin / dump-config
-  profile-boot.ts     ← Profile 启动：加载 .env，叠加 patch 层，启动 Cordis Loader
+  bin.ts              ← CLI 入口：解析参数、加载启动环境、分派到 profile-boot / plugin / dump-config
+  profile-boot.ts     ← Profile 启动：定位 Profile 目录、读覆盖层、委托 app-boot 启动
   args.ts             ← 命令行参数解析（Commander）
+  dump-config.ts      ← 导出当前生效的配置
   startup-diagnostics.ts  ← 启动失败诊断报告
 
 packages/
+  boot/app-boot/     ← 启动内核：环境加载、Profile 解析、Cordis Loader 启动（boot/loadLayeredEnv/resolveProfileDir/readProfilePatches/boot）
   core/           ← 产品 API 脊柱
     agent-loop/   ← Agent 默认驱动：Turn/Step 状态机
     agent/        ← Agent 注册表 + 句柄 + 事件
@@ -67,53 +68,53 @@ packages/
   shell/          ← Shell 执行能力族（bash/pwsh，local/sandbox）
   sandbox/        ← 进程隔离（bwrap/Landlock/Seatbelt）
   bundle/         ← 可安装 Profile Bundle
-  boot/           ← CLI 启动胶水
   team/           ← 子 Agent 树共享任务看板（任务板服务 + 模型任务工具）
+  util/official-bundles/ ← 内置 Profile 模板与 Bundle 清单
   ...             ← 其他能力包（见 packages/README.md）
 ```
 
 ---
 
-## End-to-end flow (text diagram)
+## 整体运行流程（文本图）
 
-One headless task goes from the command line to a result in five steps: parse the command line, prepare the launch environment, install plugins, create the Agent, and loop on inference until done. The diagram marks where each step lands, in which file, and what happens:
+一条 headless 任务从命令行到出结果，一共五步：解析命令行 → 准备启动环境 → 装插件 → 建 Agent → 循环推理直到做完。下面的图把每一步落在哪个文件、发生了什么都标出来了：
 
 ```
 用户输入: dsh headless "帮我分析一下代码"
-         │
-         ▼
+          │
+          ▼
 ┌──────────────────────────────────────────────┐
 │ apps/cli/src/bin.ts                          │
 │   parseDshArgs(argv)  →  ProfileInvocation   │
-│   runProfile({profile: 'headless', args: [...]}) │
+│   loadLayeredEnv('dsh') →  加载分层 .env 环境 │（委托 @deepseek-ai/dsh-app-boot）
+│   runProfile({profile: 'headless', args})     │
 └──────────────────┬───────────────────────────┘
-                   │
-                   ▼
+                    │
+                    ▼
 ┌──────────────────────────────────────────────┐
 │ apps/cli/src/profile-boot.ts                 │
-│   loadLayeredEnv('dsh')  →  加载 .env 文件   │
-│   resolveProfileDir()     →  找到 Profile 目录 │
-│   readProfilePatches()    →  读取 Bundle 配置  │
-│   boot(...)               →  启动 Cordis 框架  │
+│   resolveProfileDir()     →  找到 Profile 目录 │（委托 @deepseek-ai/dsh-app-boot）
+│   readProfilePatches()    →  读取 Bundle 配置  │（委托 @deepseek-ai/dsh-app-boot）
+│   boot(...)               →  启动 Cordis 框架  │（委托 @deepseek-ai/dsh-app-boot）
 └──────────────────┬───────────────────────────┘
-                   │
-                   ▼
+                    │
+                    ▼
 ┌──────────────────────────────────────────────┐
-│ Cordis Loader 启动                            │
-│   1. 加载 dsh-base Bundle（LLM、工具、Session…） │
+│ Cordis Loader 启动（packages/boot/app-boot）   │
+│   1. 加载 dsh-base Bundle（LLM、工具、Session…）│
 │   2. 加载 headless Bundle（一次性 Runner）     │
 │   3. 应用 cordis.patch.yml 覆盖层            │
 │   4. 所有 Plugin.apply(ctx) 依次执行          │
 └──────────────────┬───────────────────────────┘
-                   │
-                   ▼
+                    │
+                    ▼
 ┌──────────────────────────────────────────────┐
 │ ctx.agents.create()  ← 创建 Agent            │
 │   ├─ ctx.sessions.prepare(sessionId)         │
 │   └─ ReactLoopAgent(session, options)        │
 └──────────────────┬───────────────────────────┘
-                   │
-                   ▼
+                    │
+                    ▼
 ┌──────────────────────────────────────────────┐
 │ Agent Loop 开始驱动 Turn                     │
 │                                              │
@@ -145,39 +146,39 @@ One headless task goes from the command line to a result in five steps: parse th
 │                                              │
 │   TURN END                                 │
 └──────────────────────────────────────────────┘
-                   │
-                   ▼
-           输出结果，进程退出
+                    │
+                    ▼
+            输出结果，进程退出
 ```
 
 ---
 
-## Key service keys (ctx keys)
+## 关键服务键（ctx 键）
 
-Plugins never import each other; they put capabilities into, and take them from, a shared "service repository" (ctx). Each capability has a key; these are the most used ones on the core path:
+插件之间不互相 import，而是往一个公共的"服务仓库"（ctx）里放能力、取能力。每个能力有一个键，下面是核心链路上最常用的几个：
 
-| ctx key | Owning package | What it does |
+| ctx 键 | 所属包 | 管什么 |
 |---|---|---|
-| `ctx.sessions` | `core/session` | Create Sessions, read logs, derive model history from the log |
-| `ctx.sessionPersistence` | `session/session-persistence` | Put Session logs on disk (per-Session handles) |
-| `ctx.sessionProjections` | `session/session-projection` | Fold event streams into handy views (inbox, model selection, ...) |
-| `ctx.tools` | `core/tools` | The tool roster + execution pipeline |
-| `ctx.llm` | `llm/llm` | Call models (streaming) + manage provider adapters |
-| `ctx.agents` | `core/agent` | Register, create, and resume Agents |
-| `ctx.agentLoop` | `core/agent-loop` | The default Agent driver (factory registration) |
-| `ctx.systemPrompt` | `core/system-prompt` | Assemble the system prompt |
-| `ctx.agentDefaultModel` | `core/agent-default-model` | The deployment's default model |
-| `ctx.shell` | `shell/shell` | The one entry for running shell commands |
-| `ctx.sandboxPolicy` | `sandbox/sandbox-policy` | Sandbox default policy |
-| `ctx.jobs` | `jobs/jobs` | Background job management |
+| `ctx.sessions` | `core/session` | 建 Session、查日志、从日志推导模型历史 |
+| `ctx.sessionPersistence` | `session/session-persistence` | 把 Session 日志落到磁盘（按 Session 句柄读写） |
+| `ctx.sessionProjections` | `session/session-projection` | 把事件流折叠成好用的视图（inbox、模型选择等） |
+| `ctx.tools` | `core/tools` | 工具的花名册 + 执行管线 |
+| `ctx.llm` | `llm/llm` | 调大模型（流式） + 管理各家 Provider 适配器 |
+| `ctx.agents` | `core/agent` | Agent 的注册、创建、恢复 |
+| `ctx.agentLoop` | `core/agent-loop` | Agent 默认驱动（工厂注册） |
+| `ctx.systemPrompt` | `core/system-prompt` | 拼系统提示词 |
+| `ctx.agentDefaultModel` | `core/agent-default-model` | 部署方指定的默认模型 |
+| `ctx.shell` | `shell/shell` | 跑 shell 命令的统一入口 |
+| `ctx.sandboxPolicy` | `sandbox/sandbox-policy` | 沙箱默认策略 |
+| `ctx.jobs` | `jobs/jobs` | 后台任务管理 |
 
 ---
 
-## Design principles (from AGENTS.md)
+## 设计原则（来自 AGENTS.md）
 
-Four rules span the whole repository; you will meet them everywhere while reading the source:
+四条贯穿全仓库的规矩，读源码时随时会碰到：
 
-- **Seam with three roles**: every capability splits into "interface (Service Definition) / implementation (Service Provider) / consumer (Consumer)"; all three are required
-- **Model-visible means logged**: anything that entered a model request must be reconstructable verbatim from the Session log
-- **Plugins first**: new behavior mounts as plugins instead of touching the Agent Loop
-- **Typed Events**: event types come from TypeScript declaration merging; dispatch has five modes: `emit`/`waterfall`/`parallel`/`serial`/`bail`
+- **Seam 三角色**：每个能力都拆成"接口（Service Definition）/ 实现（Service Provider）/ 使用者（Consumer）"三方，缺一不可
+- **模型可见即已记录**：凡是进过模型请求的数据，必须能从 Session 日志里原样重建
+- **插件优先**：加新功能靠挂插件，不动 Agent Loop 本身
+- **Typed Events**：事件类型用 TypeScript 声明合并定义，分发分五种：`emit`/`waterfall`/`parallel`/`serial`/`bail`

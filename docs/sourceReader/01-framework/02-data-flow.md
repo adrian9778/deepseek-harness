@@ -1,27 +1,26 @@
-# Main data flow end to end
+# 主数据流与整体运行流程
 
-English | [中文](02-data-flow.zh.md)
 
-This page follows "one request" from start to finish: from the command line through plugin installation, Agent start, streaming model replies, tool execution, and log persistence, with a diagram at every stop. When a term is unfamiliar, check the glossary in [README.md](../README.md); for a finer look at any stage, each section points to its detailed document.
+这一页沿着"一条请求"从头走到尾：从命令行进来到插件装好、Agent 开跑、模型流式回复、工具执行、日志落盘，每一站都给一张图。看不懂某个名词时先查 [README.md](../README.md) 的术语表；想看更细的某一段，每节末尾都指向对应的详细文档。
 
-## Request flow panorama (ASCII)
+## 请求流转全景图（ASCII）
 
-The big picture first: a task enters from the command line and passes through "launch environment → install plugins → create Agent → inference loop", and all key actions converge into the same Session log.
+先看大图：一条任务从命令行进入，先后经过"启动环境 → 装插件 → 建 Agent → 循环推理"，所有关键动作最后都汇入同一份 Session 日志。
 
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │              dsh CLI (argv)                  │
-                    │  "run the tests"  →  ProfileInvocation      │
-                    └──────────────────┬──────────────────────────┘
-                                       │
-                                       ▼
-                    ┌─────────────────────────────────────────────┐
-                    │           Profile Boot                       │
-                    │  1. loadLayeredEnv()    ← .env 文件         │
-                    │  2. resolveProfileDir() ← $DSH_HOME          │
-                    │  3. readProfilePatches() ← Bundle 列表       │
-                    │  4. boot(...)             ← Cordis Loader    │
-                    └──────────────────┬──────────────────────────┘
+                     ┌─────────────────────────────────────────────┐
+                     │            dsh CLI (bin.ts)                  │
+                     │  "run the tests"  →  ProfileInvocation      │
+                     │  loadLayeredEnv('dsh') ← .env 文件          │
+                     └──────────────────┬──────────────────────────┘
+                                        │
+                                        ▼
+                     ┌─────────────────────────────────────────────┐
+                     │           Profile Boot                       │
+                     │  1. resolveProfileDir() ← $DSH_HOME          │
+                     │  2. readProfilePatches() ← Bundle 列表       │
+                     │  3. boot(...)             ← Cordis Loader    │
+                     └──────────────────┬──────────────────────────┘
                                        │
                ┌───────────────────────┼───────────────────────┐
                │                       │                       │
@@ -79,13 +78,13 @@ The big picture first: a task enters from the command line and passes through "l
 
 ---
 
-## Flow details
+## 数据流详解
 
-Each stop in the panorama, unpacked below. Every flow diagram keeps the real call names from the source so you can jump straight into the code.
+全景图里的每一站，下面逐个拆开看。每段流程图保持源码里的真实调用名，方便直接跳进代码。
 
-### 1. Launch-time flow
+### 1. 启动阶段数据流
 
-Launching means assembling three inputs (environment variables, Profile config, user overlay) into one plugin list and handing it to Cordis to install:
+启动就是把三样东西（环境变量、Profile 配置、用户覆盖）拼成一份插件清单，然后交给 Cordis 装好：
 
 ```
 .env 文件
@@ -105,9 +104,9 @@ Cordis Loader
 Context (ctx) ← 所有服务注入完毕
 ```
 
-### 2. Agent creation flow
+### 2. Agent 创建数据流
 
-After plugins are installed there is no conversation yet; creating an Agent is where work actually starts. Creation wires up four things: open the log, build the driver, run setup, announce the birth:
+插件装好后还没有任何对话；创建 Agent 才真正开始一轮工作。创建过程串了四件事：开日志、建驱动、跑 setup、广播诞生：
 
 ```
 ctx.agents.create({ sessionId, agentOptions })
@@ -128,9 +127,9 @@ ctx.agents.create({ sessionId, agentOptions })
   └─► 返回 AgentHandle { agent, dispose }
 ```
 
-### 3. User input flow
+### 3. 用户输入流入数据流
 
-Every user message is first written to the log (so it can never be lost), and only then wakes the Agent to pick it up:
+用户每发一条消息，先写进日志（保证丢不了），再唤醒 Agent 去取：
 
 ```
 用户调用 handle.agent.followup(message)
@@ -147,9 +146,9 @@ Every user message is first written to the log (so it can never be lost), and on
           → 传入 pre-step 组装阶段
 ```
 
-### 4. One complete Turn
+### 4. 一次完整 Turn 的数据流
 
-This is the system's "engine": one conversation round = prepare materials → ask the model → run tools → ask the model again ... until the model stops asking for tools:
+这是整个系统的"发动机"：一轮对话 = 准备材料 → 问模型 → 执行工具 → 再问模型……直到模型不再要工具为止：
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -204,9 +203,9 @@ This is the system's "engine": one conversation round = prepare materials → as
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 5. Session log write flow
+### 5. Session 日志写入数据流
 
-Every append passes five gates: is the type known, is the content valid, can the snapshot serialize losslessly — only then does it enter memory and fire events:
+每次 append 都过五道关：类型对不对、内容合不合法、快照能不能无损序列化，然后才进内存、发事件：
 
 ```
 session.append(type, data, opts?)
@@ -230,9 +229,9 @@ session.append(type, data, opts?)
   └─► 触发 session/event（调用方各自订阅处理）
 ```
 
-### 6. Persistence flow
+### 6. 持久化数据流
 
-Beyond the in-memory log, a persistence backend handles "flushing to disk" and "resuming after restart". Writes go through buffered batches; on resume every line is validated and unknown types are rejected outright:
+内存日志之外，还有一个持久化后端负责"落盘"和"重启恢复"。写入走批量缓冲，恢复时逐行验证、不认识的类型直接拒绝：
 
 ```
 SessionPersistence 后端（如 session-persistence-jsonl）
@@ -256,9 +255,9 @@ SessionPersistence 后端（如 session-persistence-jsonl）
 
 ---
 
-## Error propagation paths
+## 错误传播路径
 
-Who catches an error, where it travels, and what the user finally sees. Note the design stance: tool-level failures do not sink the whole conversation; only model-level faults end the Turn:
+出错时谁接住、传给谁、最后用户看到什么。注意设计取向：工具级失败不拖垮整轮对话，只有模型级故障才终止 Turn：
 
 | 错误发生点 | 传播路径 | 最终表现 |
 |---|---|---|
@@ -270,11 +269,11 @@ Who catches an error, where it travels, and what the user finally sees. Note the
 
 ---
 
-## Immutable objects in key flows
+## 关键流程中的不可变对象
 
-The system "freezes" data at key positions so downstream code cannot quietly change it and desynchronize the log from reality. These four kinds of objects are immutable once created:
+系统在关键位置把数据"冻结"起来，防止下游偷偷修改导致日志与实况对不上。这四类对象一旦生成就不可再改：
 
-- **Request**: the config `ctx.llm.prepareCall()` returns is deep-frozen; providers cannot modify it
-- **Tool args**: snapshotted through `snapshotJsonValue()` and deep-frozen; the execute body receives immutable arguments
-- **Session events**: `deepFreeze()`d on append; later code cannot modify them
-- **Assistant stream**: compacted once settled and embedded whole in the `assistant/message` event
+- **Request**: `ctx.llm.prepareCall()` 返回的配置经 deep-freeze，Provider 不可修改
+- **Tool args**: 通过 `snapshotJsonValue()` 后 deep-freeze，执行函数收到不可变参数
+- **Session events**: 追加后 `deepFreeze()`，不可被后续修改
+- **Assistant stream**: 累积后 compact 存储，完整嵌入 `assistant/message` 事件

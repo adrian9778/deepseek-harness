@@ -1,10 +1,9 @@
-# System prompt assembly
+# 系统提示词组装过程
 
-English | [中文](04-system-prompt-assembly.zh.md)
 
 每次问模型之前，系统都要重新拼一份完整的系统提示词：身份、策略、工具说明、运行时上下文，一段都不能少。这一页讲清这份提示词是怎么"分层组装、按序渲染、支持中途替换"的，末尾附源码定位表。
 
-## The assembly architecture
+## 提示词组装的整体架构
 
 系统提示词不是单一字符串，而是由多个 **PromptSection** 有序拼接而成。每个 Section 可以来自：
 - 静态配置（Bundle 内联）
@@ -48,11 +47,11 @@ English | [中文](04-system-prompt-assembly.zh.md)
 
 ---
 
-## The PromptSection type
+## PromptSection 类型
 
 一个 Section 就是一条"固定栏目"：有名字（防重复）、有次序（order 决定位置）、有内容（静态文本或动态 provider）：
 
-**Source**: `packages/core/system-prompt/src/index.ts` · PromptSection
+**源码位置**：`packages/core/system-prompt/src/index.ts` · PromptSection
 
 ```ts
 interface PromptSection {
@@ -69,7 +68,7 @@ interface PromptSection {
 }
 ```
 
-### Built-in section positions (SECTION_ORDERS)
+### 内置 Section 位置（SECTION_ORDERS）
 
 | Section | order | 职责 |
 |---|---|---|
@@ -86,11 +85,11 @@ interface PromptSection {
 
 ---
 
-## Key decisions during assembly
+## 组装过程中的关键决策
 
 组装里有三个容易踩坑的位置，逐个说明：
 
-### 1. Tool schema injection
+### 1. 工具 Schema 注入
 
 工具 Schema 在每次 Step 开始前重新组装，因为工具的可见性可能因 Agent preset 而变化。
 
@@ -102,7 +101,7 @@ ctx.systemPrompt.tools(({ scope, toolSet }) => ({ ...executor.describe(...), kno
 // projectToolSchema 只保留 { name, description, parameters, deferLoading? }
 ```
 
-### 2. The system message in the Session
+### 2. System Message 在 Session 中的表示
 
 拼好的提示词去哪里？第一次写入 Session 作为 node 0；之后工具变了就"替换"这个节点，而不是追加新消息——这保证了模型历史里始终只有一份最新系统提示词：
 
@@ -118,7 +117,7 @@ session.append('system/message',
   { surfaceOp: { op: 'replace', startSeq: lastSysSeq, endSeq: lastSysSeq } })
 ```
 
-### 3. In-history vs head update modes
+### 3. In-history vs Head 更新模式
 
 不同模型对系统提示词的支持方式不同：有的允许它在历史任意位置，有的只认开头一条。系统按模型能力选择更新策略：
 
@@ -127,15 +126,15 @@ session.append('system/message',
 | `'in-history'` | system 消息可出现在对话历史任意位置 | 支持该能力的模型 |
 | 缺省 | system 消息只在对话头部 | 大多数 OpenAI 兼容 API |
 
-**Source**: `packages/llm/llm/src/types.ts` · LlmResolvedModelInfo
+**源码位置**：`packages/llm/llm/src/types.ts` · LlmResolvedModelInfo
 
 ---
 
-## System prompt replacement semantics
+## System Prompt 替换语义
 
 系统提示词在 Session 里是一个"表面节点"（surface node），有严格的替换规则。核心思想：node 0（第一次的提示词）受保护，后续节点可以替换或清空：
 
-**Source**: `packages/core/session/src/surface.ts` assertSystemHeadRewrite
+**源码位置**：`packages/core/session/src/surface.ts` assertSystemHeadRewrite
 
 ```
 System prompt 在 Session 中是一个 "surface node"（表面节点）。
@@ -162,11 +161,11 @@ System prompt 在 Session 中是一个 "surface node"（表面节点）。
 
 ---
 
-## Runtime context injection
+## 运行时上下文注入
 
 除了系统提示词，每个 Step 开始前还会刷新一份"当下事实快照"（工作目录、时间、沙箱策略等），以 durable user-role 消息写进日志：
 
-**Source**: `packages/core/agent-loop/src/runtime-context.ts`
+**源码位置**：`packages/core/agent-loop/src/runtime-context.ts`
 
 Agent Loop 在每个 Step 开始前刷新运行时上下文：
 
@@ -188,7 +187,7 @@ SystemPromptProjection 决定 `system/message` 的提交：它按 `renderPrompt(
 
 ---
 
-## Key source map
+## 关键源码定位
 
 想直接跳进源码时用这张表，按功能直达文件与符号：
 

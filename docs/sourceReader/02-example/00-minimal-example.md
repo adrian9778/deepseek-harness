@@ -1,22 +1,21 @@
-# Minimal runnable example: one headless task
+# 最小可运行示例：Headless 模式执行一条任务
 
-English | [中文](00-minimal-example.zh.md)
 
-This page walks one real task from start to finish: from typing the command, through plugin installation, Agent start, model thinking, and tool execution, to the result and process exit. Every hop carries its source location; after reading it you can trace the whole "command line to model response" chain. A Mermaid sequence diagram and a source quick-reference table at the end make it easy to come back and locate things.
+这一页带你从头到尾跟着一条真实任务走一遍：从敲下命令，到插件装好、Agent 开跑、模型思考、工具执行，最后出结果、进程退出。每一跳都标注了源码位置，读完你就能把"命令行到模型响应"这条主链路完整串起来。配一张 Mermaid 时序图和一份源码速查表，方便回头定位。
 
-## Scenario
+## 场景描述
 
-The user runs `dsh headless "list every .ts file in this directory"`. The framework launches, creates an Agent, runs one model round, executes tools, prints the result, and exits. The whole trip takes fewer than ten hops, one job per hop:
+用户执行 `dsh headless "帮我列出当前目录下所有 .ts 文件"`，框架启动、创建 Agent、发起一轮模型调用、执行工具、输出结果后退出。整个过程不到十跳，每跳只做一件事：
 
 ---
 
-## Full path trace
+## 完整路径追踪
 
-Ten hops at a glance: parse the command → load config → mount plugins → create the Agent → wake it → assemble the prompt → call the model → run tools → call the model again → wrap up and exit.
+十跳全景：解析命令 → 装配置 → 挂插件 → 建 Agent → 唤醒 → 组提示词 → 调模型 → 跑工具 → 再调模型 → 收尾退出。
 
-### Hop 1: CLI entry → argument parsing
+### 第 1 跳：CLI 入口 → 参数解析
 
-**Source**: `apps/cli/src/bin.ts` · runCli, `apps/cli/src/args.ts` · parseDshArgs
+**源码位置**：`apps/cli/src/bin.ts` · runCli、`apps/cli/src/args.ts` · parseDshArgs
 
 ```
 进程启动
@@ -29,16 +28,16 @@ Ten hops at a glance: parse the command → load config → mount plugins → cr
        → args: ['帮我列出当前目录下所有 .ts 文件']
 ```
 
-**Parsing rules** (`args.ts`):
-- `dsh <name>` rewrites to `--profile <name>`
-- the first token the launcher does not recognize starts the inner args
-- `--patch` repeats and collects the overlay list
+**参数解析规则**（`args.ts`）：
+- `dsh <name>` 重写为 `--profile <name>`
+- 第一个不被 launcher 识别的 token 开始 inner args
+- `--patch` 可重复，收集为 overlay 列表
 
-### Hop 2: Profile Boot → load configuration
+### 第 2 跳：Profile Boot → 加载配置
 
-This hop translates the "launch menu" into a concrete plugin list: find the directory, read the manifest, then stack the user's own overlays on top.
+这一跳把"启动套餐"翻译成一份具体的插件清单：先找目录，再读清单，最后叠加用户自己的覆盖层。
 
-**Source**: `apps/cli/src/profile-boot.ts`, `packages/boot/app-boot/src/`
+**源码位置**：`apps/cli/src/bin.ts`（调用与环境加载）、`apps/cli/src/profile-boot.ts`、`packages/boot/app-boot/src/`
 
 ```
 runProfile({
@@ -55,7 +54,7 @@ runProfile({
   → boot(...)
 ```
 
-**Bundle stacking order**:
+**Bundle 叠加顺序**：
 
 ```
 空配置 []
@@ -65,11 +64,11 @@ runProfile({
   + --patch overlays         → [+ 命令行覆盖层]
 ```
 
-### Hop 3: Cordis Loader → mount the plugin tree
+### 第 3 跳：Cordis Loader → 挂载插件树
 
-With the list ready, Cordis installs every plugin into the Context in dependency order; each capability ends up owning a key on ctx:
+清单就绪后，Cordis 按依赖顺序把所有插件装进 Context，装完每个能力都在 ctx 上占一个键：
 
-**Source**: `vendor/` Cordis Loader + `packages/boot/app-boot/src/index.ts` (`boot`)
+**源码位置**：`vendor/` 中 Cordis Loader + `packages/boot/app-boot/src/index.ts`（`boot`）
 
 ```
 boot(...)
@@ -88,11 +87,11 @@ boot(...)
        └─ ... (其他工具)
 ```
 
-### Hop 4: Headless runner → create the Agent
+### 第 4 跳：Headless Runner → 创建 Agent
 
-The headless menu ships its own "one-shot runner" plugin: wait for the full tree, read the task text from the command line, create the Agent:
+headless 套餐自带一个"一次性 Runner"插件：等全树就绪、读命令行里的任务文本、创建 Agent：
 
-**Source**: `packages/bundle/headless/src/startup.ts`, `packages/bundle/headless/src/index.ts`
+**源码位置**：`packages/bundle/headless/src/startup.ts`、`packages/bundle/headless/src/index.ts`
 
 ```
 headless-startup 行解析 cmdline（Commander: --json/--session-id/[task...]）
@@ -108,11 +107,11 @@ headless-runner 行 apply(ctx)
   └─ 返回 AgentHandle
 ```
 
-### Hop 5: Agent Loop starts driving
+### 第 5 跳：Agent Loop 开始驱动
 
-The Agent exists but is standing by; the runner pushes the user's task into the Inbox and wakes it:
+Agent 建好了但还在待命；Runner 把用户任务塞进 Inbox 并唤醒它：
 
-**Source**: `packages/core/agent-loop/src/agent.ts`, `packages/core/agent-loop/src/index.ts`
+**源码位置**：`packages/core/agent-loop/src/agent.ts`、`packages/core/agent-loop/src/index.ts`
 
 ```
 ReactLoopAgent 构造器
@@ -122,9 +121,9 @@ ReactLoopAgent 构造器
   └─ 等待 inbox 中有消息（由 runner 注入）
 ```
 
-The AgentLoop service registers the `inbox` projection with `ctx.sessionProjections` at init.
+AgentLoop 服务在 init 时把 `inbox` 投影注册到 `ctx.sessionProjections`。
 
-The runner injects the user message:
+Runner 将用户消息注入 Inbox：
 
 ```
 handle.agent.followup(createUserMessage(...))
@@ -132,11 +131,11 @@ handle.agent.followup(createUserMessage(...))
   → 唤醒 Agent Loop（如果 idle）
 ```
 
-### Hop 6: Turn starts → prompt assembly
+### 第 6 跳：Turn 开始 → 提示词组装
 
-Once the Turn starts, it gathers materials first: claim the user message, assemble the system prompt, derive history from the log:
+Turn 开始后先备料：取用户消息、拼系统提示词、从日志推导历史：
 
-**Source**: `packages/core/agent-loop/src/agent.ts`, `packages/core/system-prompt/src/`
+**源码位置**：`packages/core/agent-loop/src/agent.ts`、`packages/core/system-prompt/src/`
 
 ```
 [Turn N Start]
@@ -160,11 +159,11 @@ Once the Turn starts, it gathers materials first: claim the user message, assemb
     → 返回 Message[]
 ```
 
-### Hop 7: LLM streaming call
+### 第 7 跳：LLM 流式调用
 
-Materials ready, it fires a streaming request at the model. The reply does not arrive all at once; it streams back chunk by chunk:
+材料齐了，向模型发起流式请求。回复不是一次性到达，而是一段一段流回来：
 
-**Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.prepareRequest, `packages/llm/llm/src/index.ts`, `packages/llm/llm-deepseek/src/`
+**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.prepareRequest、`packages/llm/llm/src/index.ts`、`packages/llm/llm-deepseek/src/`
 
 ```
 // 准备 Call 配置（prepareRequest 内）
@@ -184,19 +183,19 @@ for await (const chunk of stream) {
 }
 ```
 
-**DeepSeek provider implementation** (`packages/llm/llm-deepseek/src/`):
-- POST to the DeepSeek API
-- set `Authorization: Bearer <API_KEY>`
-- parse the SSE stream response
-- convert to `StreamChunk` frames
+**DeepSeek Provider 实现**（`packages/llm/llm-deepseek/src/`）：
+- POST 到 DeepSeek API
+- 设置 `Authorization: Bearer <API_KEY>`
+- 解析 SSE 流响应
+- 转换为 `StreamChunk` 格式
 
-### Hop 8: Tool execution
+### 第 8 跳：工具调用执行
 
-The model says "I need to see the directory", so its requested tool runs. One batch passes through four stations: pre-check → execute → post-process → log:
+模型说"我要看目录"，于是执行它要的工具。一批调用统一过"预检 → 执行 → 后处理 → 记日志"四道工序：
 
-**Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.step, `packages/core/tools/src/batch.ts` · executeToolBatch, `packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
+**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.step、`packages/core/tools/src/batch.ts` · executeToolBatch、`packages/core/tools/src/pipeline.ts` · ToolExecutionPipeline
 
-Assume the model returned one tool call:
+假设模型返回了一个工具调用：
 
 ```
 // 一个 Step 的全部 tool calls 作为一个批次执行
@@ -219,9 +218,9 @@ await ctx.tools.execute({
 //    → 追加到 Session 日志
 ```
 
-### Hop 9: Second Step (the model continues on tool results)
+### 第 9 跳：第二轮 Step（模型基于工具结果继续）
 
-With tool results in the log, the model takes one more look at the whole picture; this time it answers directly and asks for no more tools:
+工具结果写进日志后，模型再看一次全局，这次它直接给出答案、不再要工具：
 
 ```
 工具结果已追加到 Session 日志
@@ -235,11 +234,11 @@ With tool results in the log, the model takes one more look at the whole picture
   → session.append('assistant/message', { ... })
 ```
 
-### Hop 10: Turn end → cleanup
+### 第 10 跳：Turn 结束 → 清理
 
-The answer is out; the Turn wraps up, the runner prints the result, tears down the Agent, and unloads every plugin in reverse order:
+答案出来了，Turn 收尾；Runner 打印结果、拆掉 Agent、反序卸载所有插件：
 
-**Source**: `packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.turn +68~+100
+**源码位置**：`packages/core/agent-loop/src/agent.ts` · ReactLoopAgent.turn +68~+100
 
 ```
 [Turn N End]
@@ -257,9 +256,9 @@ The answer is out; the Turn wraps up, the runner prints the result, tears down t
 
 ---
 
-## Full sequence diagram (Mermaid)
+## 全流程时序图（Mermaid）
 
-If the hop-by-hop text is too much, this diagram alone is enough: participants on the left, the timeline runs downward.
+不想逐跳读文字的话，看这张图就够：左边是参与者，从上到下就是时间线。
 
 ```mermaid
 sequenceDiagram
@@ -276,8 +275,9 @@ sequenceDiagram
 
     User->>CLI: dsh headless "列出 .ts 文件"
     CLI->>CLI: parseDshArgs() → ProfileInvocation
+    CLI->>CLI: loadLayeredEnv('dsh') → 环境快照
     CLI->>Boot: runProfile({ profile: 'headless', args })
-    Boot->>Boot: loadLayeredEnv() + readProfilePatches()
+    Boot->>Boot: resolveProfileDir() + readProfilePatches()
     Boot->>Loader: boot(...) + mountRootInclude(...)
     Loader->>Loader: 按依赖顺序 apply 所有 Plugin
     Loader-->>Boot: Context 就绪
@@ -331,9 +331,9 @@ sequenceDiagram
 
 ---
 
-## Key source quick reference
+## 关键源码定位速查
 
-One last table: when you return to change code or investigate an issue, jump straight from stage to source.
+最后一张表：回头改代码或查问题时，按阶段直达源码位置。
 
 | 阶段 | 关键源码 |
 |---|---|

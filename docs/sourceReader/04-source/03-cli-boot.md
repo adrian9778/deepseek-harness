@@ -1,20 +1,19 @@
-# CLI launch path reference
+# CLI 启动流程源码解析
 
-English | [中文](03-cli-boot.zh.md)
 
 敲下 `dsh` 之后发生什么？这一篇拆开 CLI 的启动链路：入口怎么分派、参数怎么解析、Profile 怎么加载、失败怎么报告、进程怎么优雅退出。与第二层的全路径示例互补：那篇看全景，这篇看实现。源码位置按"符号 + 偏移"标注（`+0` = 符号定义行，`+N` = 符号体内第 N 行，闭区间）。
 
-## Module overview
+## 模块概览
 
 九个文件按职责划分：入口（`bin.ts` 直接运行、`installed-bin.ts` 供已安装载体）、参数、启动、子命令、诊断、关机：
 
-**Source directory**: `apps/cli/src/`
+**源码目录**：`apps/cli/src/`
 
 | 文件 | 职责 | 行数 |
 |---|---|---|
 | `bin.ts` | CLI 主入口：参数分派 | ~78 |
 | `args.ts` | Commander 参数解析 | ~216 |
-| `profile-boot.ts` | Profile 启动：加载配置、叠加 patch、启动 Cordis | ~353 |
+| `profile-boot.ts` | Profile 启动：加载配置、叠加 patch、启动 Cordis | ~366 |
 | `plugin.ts` | `dsh plugin` 子命令实现 | ~108 |
 | `installed-bin.ts` | 已安装 CLI 入口：转调 `runCli`，Windows 下先解析 8.3 短路径别名 | ~28 |
 | `dump-config.ts` | `--dump-config` 实现 | ~76 |
@@ -24,9 +23,9 @@ English | [中文](03-cli-boot.zh.md)
 
 ---
 
-## bin.ts — the main entry
+## bin.ts — 主入口
 
-### `runCli(options)` (bin.ts · runCli)
+### `runCli(options)`（bin.ts · runCli）
 
 入口只做一件事：解析参数，然后按模式分派给四个子模块（动态 import，保证冷启动只加载用到的部分）：
 
@@ -65,9 +64,9 @@ export async function runCli(options: RunCliOptions = {}): Promise<void>
 
 ---
 
-## args.ts — argument parsing
+## args.ts — 参数解析
 
-### `parseDshArgs(argv, version, manageDesktopProfile)` (args.ts · parseDshArgs)
+### `parseDshArgs(argv, version, manageDesktopProfile)`（args.ts · parseDshArgs）
 
 解析规则一句话：先吃掉自己认识的标志，剩下的全给 Profile：
 
@@ -106,11 +105,11 @@ Launcher 自己的标志（先消费）：
 
 ---
 
-## profile-boot.ts — Profile launch
+## profile-boot.ts — Profile 启动
 
 启动的五步：代理安装 → Profile 组合 → 关机与 fail-loud → Cordis 装插件 → 交还进程生命周期。
 
-### `runProfile(options)` (profile-boot.ts · runProfile)
+### `runProfile(options)`（profile-boot.ts · runProfile）
 
 ```ts
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }>
@@ -147,7 +146,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
    → 启动失败：先 dispose 再抛原错误；清理也失败则抛 AggregateError
 ```
 
-### `initializeProfileFromDefault(name, fromDefaultProfile, home)` (profile-boot.ts · initializeProfileFromDefault)
+### `initializeProfileFromDefault(name, fromDefaultProfile, home)`（profile-boot.ts · initializeProfileFromDefault）
 
 从 shipped 模板重建自定义 Profile。用 staging 目录 + 原子 rename，失败不污染现有目录：
 
@@ -162,11 +161,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
 
 ---
 
-## Startup failure handling
+## 启动失败处理
 
 失败不是无声的：写结构化报告到日志目录，stderr 给出路径，退出码 1。
 
-### `reportStartupFailure(error, context, write?)` (startup-diagnostics.ts · reportStartupFailure)
+### `reportStartupFailure(error, context, write?)`（startup-diagnostics.ts · reportStartupFailure）
 
 **逻辑**（`reportStartupFailure +0~+34`）：
 1. 生成结构化报告：凭据警告 + timestamp / dshVersion / nodeVersion / platform / arch / profile / error（`inspect` 全展开，不截断数组与字符串）
@@ -176,11 +175,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
 
 ---
 
-## Process shutdown
+## 进程关机
 
 Ctrl+C 之后发生什么：优雅收尾而不是硬杀。
 
-### `createProcessShutdown(dispose, forceExit?, complete?, timeoutMs?)` (process-shutdown.ts · createProcessShutdown)
+### `createProcessShutdown(dispose, forceExit?, complete?, timeoutMs?)`（process-shutdown.ts · createProcessShutdown）
 
 `createProcessShutdown` 只造关机控制器，不注册信号；信号由 `runProfile` 注册（SIGTERM → `interrupt(0)`、SIGINT → `interrupt(130)`）。
 

@@ -1,8 +1,9 @@
 {
   "library": "docs/sourceReader",
   "lastSync": {
-    "date": "2026-11-05",
-    "note": "Synced to HEAD at sync time. Previous full-rewrite baseline is the 2026-11-03 sourceReader rewrite commit; resolve it with: git log -1 --format='%h %ad %s' -- docs/sourceReader/. Commit hashes are intentionally not stored here because verify-repository-references rejects hash literals in maintained files."
+    "date": "2026-11-12",
+    "note": "Synced to HEAD at sync time. Previous full-rewrite baseline is the 2026-11-03 sourceReader rewrite commit; resolve it with: git log -1 --format='%h %ad %s' -- docs/sourceReader/. Commit hashes are intentionally not stored here because verify-repository-references rejects hash literals in maintained files.",
+    "changes": "Chinese-only form: English .md pairs and .i18n.yaml sidecars removed, .zh.md renamed to .md, library added to scripts/translation-pairing.manifest.json as docs/sourceReader/. Full regeneration of all 16 existing docs against HEAD: line-count tables refreshed, loadLayeredEnv attribution fixed (bin.ts), maintenance phase semantics corrected, constructor signature updated (lifetimeSignal), ToolsService/LlmRuntime examples corrected, dependency directions refined. Topic doc (dsh 中 Agent 的特点) lives in docs/topics/, not this library."
   },
   "spec": ".progress/UPDATE-SPEC.md",
   "notation": "symbol+offset relative to the section anchor symbol; index tables are symbol-to-file only; approximate line counts (~N) allowed in module overview tables",
@@ -24,11 +25,14 @@
     "04-source/03-cli-boot.md",
     "04-source/04-llm.md"
   ],
-  "bilingual": "every doc has a .zh.md pair; re-record hashes with node_modules/.bin/tsx scripts/verify-translation-pairing.ts --write <doc.md> after pnpm install has completed; avoid `pnpm run` wrappers while the dependency tree is being repaired",
+  "bilingual": "Chinese-only as of 2026-11-12; docs/sourceReader/ is excluded in scripts/translation-pairing.manifest.json, so no .zh.md pairs or .i18n.yaml records are required in this library",
+  "tools": ".progress/sr_tools.py: locate/outline/offset/verify/symbols; verify checks file-path references (four buckets), symbols checks path·symbol attribution; method regex accepts generics and skips control-flow keywords",
   "verifiedRefs": {
     "exact": "agent.ts/inbox.ts/assistant-stream.ts/session surface+request-header+types/cli-boot/llm service methods/StreamChunk/GenerateOptions",
     "shifted": "agent-loop index.ts -3 net lines (AgentLoop 290, init 328, create 667, createAgent 716, resume 752, dispose closure 547); tools index.ts ToolView 51; system-prompt tools() 551 assemble() 620",
     "misattributed": "llm doc type sections pointed at wrong files: LlmCallConfig is call-config.ts:31, LlmResolvedModelInfo types.ts:454, SystemPromptUpdate types.ts:440",
-    "renamed": "session-telemetry-otel -> packages/telemetry/otel (@deepseek-ai/dsh-otel)"
+    "renamed": "session-telemetry-otel -> packages/telemetry/otel (@deepseek-ai/dsh-otel)",
+    "topicAgent": "docs/topics/agent-characteristics.md: verify 62 OK / 0 bad, symbols 30 OK / 0 misattributed (2026-11-12)",
+    "finalFullLibrary": "2026-11-12: verify 337 OK / 0 bad (118 bare-name non-errors), symbols 134 OK / 0 misattributed; pnpm run test:docs 21 passed / 0 failed"
   }
 }

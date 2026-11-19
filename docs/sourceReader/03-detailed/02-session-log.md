@@ -1,10 +1,9 @@
-# Session log read/write and persistence
+# Session 日志读写与持久化
 
-English | [中文](02-session-log.zh.md)
 
 Session 是全系统的"唯一事实来源"：对话里发生过的每件事都追加进一份事件日志，模型看到的历史从日志现算，持久化也只落这份日志。这一页先讲清这个设计（Event Sourcing），再拆开 append 验证、历史推导、磁盘格式和 Fork 四个环节，末尾附源码定位表。
 
-## The core Session design: event sourcing
+## Session 的核心设计：Event Sourcing
 
 Session 是一个 **append-only 事件日志**。所有模型可见的历史都从日志中实时推导，而非单独存储。好处是：日志永远完整、任何视图都能重建、写入路径只有一条：
 
@@ -51,13 +50,13 @@ Session 是一个 **append-only 事件日志**。所有模型可见的历史都�
 
 ---
 
-## The type system
+## 数据类型体系
 
 日志里每条记录长什么样、用什么标识？这节列出核心类型：品牌化的 ID（防拿错）、事件类型表（哪些事件存在）、Surface 事件（哪些会进模型历史）、Turn 结束原因（为什么停了）。
 
-**Source**: `packages/core/session/src/types.ts` · SessionId / SessionEventMap / SurfaceEventType / TurnEndReason
+**源码位置**：`packages/core/session/src/types.ts` · SessionId / SessionEventMap / SurfaceEventType / TurnEndReason
 
-### Branded id and sequence types
+### SessionId 与 Sequence 品牌类型
 
 "品牌化"（Branded）是 TypeScript 的一个技巧：运行时还是普通 string/number，但类型系统上不可混用，把 SessionId 传给要 Sequence 的参数会直接编译报错：
 
@@ -70,7 +69,7 @@ type SessionSeqCursor   = SessionSeq | -1                        // -1 表示空
 type OptionalSessionSeq = SessionSeq | null                      // null 表示无
 ```
 
-### SessionEventMap (扩展事件类型)
+### SessionEventMap（扩展事件类型）
 
 事件类型表是开放的：插件可以声明合并往里加新事件（比如 compaction、hook），所以叫"可扩展"：
 
@@ -92,7 +91,7 @@ interface SessionEventMap {
 }
 ```
 
-### SurfaceEventType (模型可见事件)
+### SurfaceEventType（模型可见事件）
 
 五种事件会进入模型历史（Surface），因此也接受"替换"操作（比如压缩时替换旧消息）；其余事件只是记录，模型永远看不到：
 
@@ -107,7 +106,7 @@ type SurfaceEventType =
 
 Surface 事件是模型历史的一部分，接受替换操作（replacement）。
 
-### TurnEndReason (Turn 结束原因)
+### TurnEndReason（Turn 结束原因）
 
 每个 Turn 结束时都写明"为什么停了"，排查问题时第一个看这里：
 
@@ -124,11 +123,11 @@ type TurnEndReason =
 
 ---
 
-## The append validation flow
+## Append 验证流程
 
 往日志里追加一条事件要过七道关。这样设计的原因：日志一旦写入就不可改，所以必须在入口把不合法的数据全部拦下：
 
-**Source**: `packages/core/session/src/index.ts` · Session.append, `packages/core/session/src/surface.ts` · SurfaceManager.validateNext
+**源码位置**：`packages/core/session/src/index.ts` · Session.append、`packages/core/session/src/surface.ts` · SurfaceManager.validateNext
 
 ```
 session.append(type, data, opts?)
@@ -174,11 +173,11 @@ session.append(type, data, opts?)
 
 ---
 
-## The deriveMessages() derivation
+## deriveMessages() 推导逻辑
 
 模型看到的历史不是存的，是算的。推导有缓存：日志没变就直接返回上次结果，变了才增量折叠新增节点：
 
-**Source**: `packages/core/session/src/index.ts` · Session.deriveMessages, `packages/core/session/src/surface.ts` · deriveEventMessage / foldSurface
+**源码位置**：`packages/core/session/src/index.ts` · Session.deriveMessages、`packages/core/session/src/surface.ts` · deriveEventMessage / foldSurface
 
 ```
 session.deriveMessages()
@@ -203,11 +202,11 @@ session.deriveMessages()
 
 ---
 
-## The persistence backend
+## 持久化后端
 
 内存日志之外，持久化后端负责把日志落成磁盘文件、重启后再读回来。先看文件长什么样，再看接口怎么定义。
 
-### Physical format
+### 物理格式
 
 目录按"项目工作目录 → Session 编号"两级组织，同一 Session 的各代格式文件并存，旧文件永不改名或删除：
 
@@ -231,7 +230,7 @@ $DSH_HOME/sessions/
 
 每个 Session 文件开头都有一份"档案"：版本号、创建时间、来源（子 Agent？fork？），读取时先看这个再决定怎么解析：
 
-**Source**: `packages/core/session/src/types.ts` · SessionHeader
+**源码位置**：`packages/core/session/src/types.ts` · SessionHeader
 
 ```ts
 interface SessionHeader {
@@ -247,7 +246,7 @@ interface SessionHeader {
 }
 ```
 
-### The persistence seam (持久化缝)
+### Persistence Seam（持久化缝）
 
 持久化同样走"接口 / 实现 / 使用者"三角色分离：定义方只说"要能创建、打开、刷盘、列举"，具体存哪里、什么格式由实现方决定：
 
@@ -275,11 +274,11 @@ interface SessionHeader {
 
 ---
 
-## Fork (会话分叉)
+## Fork（会话分叉）
 
 Fork 把一个活着的 Session 从某个位置"切开复制"出一个新 Session：父 Session 继续跑，子 Session 带走之前的历史。典型用途是子 Agent 委托：
 
-**Source**: `packages/core/session/src/fork.ts` · buildForkSeed, `packages/core/session/src/index.ts` · SessionStore.fork
+**源码位置**：`packages/core/session/src/fork.ts` · buildForkSeed、`packages/core/session/src/index.ts` · SessionStore.fork
 
 ```
 ctx.sessions.fork(source, boundary?, childSessionId?)
@@ -301,7 +300,7 @@ Fork 后的父子 Session：
 
 ---
 
-## Key source map
+## 关键源码定位
 
 想直接跳进源码时用这张表，按功能直达文件与符号：
 

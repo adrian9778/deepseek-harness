@@ -1,31 +1,30 @@
-# agent-loop package reference
+# agent-loop 包源码逐函数解析
 
-English | [中文](00-agent-loop.zh.md)
 
 这是第四层的第一篇：逐文件、逐函数拆开 agent-loop 包。前三层讲了"它做什么"，这一层讲"代码长什么样"。每节先给文件和职责表，再逐个方法展开；源码位置按"符号 + 偏移"标注（`+0` = 符号定义行，`+N` = 符号体内第 N 行，闭区间）。
 
-## Module overview
+## 模块概览
 
 agent-loop 包一共六个文件，分工明确：入口服务、驱动状态机、收件箱、流式累积、运行时上下文、常量：
 
-**Source directory**: `packages/core/agent-loop/src/`
+**源码目录**：`packages/core/agent-loop/src/`
 
 | 文件 | 职责 | 行数 |
 |---|---|---|
 | `index.ts` | AgentLoop Service、工厂注册、resume、配置 | ~835 |
-| `agent.ts` | ReactLoopAgent 驱动：Turn/Step 状态机、取消 | ~745 |
+| `agent.ts` | ReactLoopAgent 驱动：Turn/Step 状态机、取消 | ~751 |
 | `inbox.ts` | ReactLoopInbox：durable Inbox 实现 + 投影 | ~232 |
 | `assistant-stream.ts` | AssistantStreamAttempt：流式累积 + 沉降 | ~140 |
-| `runtime-context.ts` | RuntimeContextProjection + SystemPromptProjection | ~169 |
+| `runtime-context.ts` | RuntimeContextProjection + SystemPromptProjection | ~181 |
 | `constants.ts` | DEFAULT_MAX_PARALLEL_TOOL_CALLS = 10 | ~6 |
 
 ---
 
-## index.ts — the AgentLoop service
+## index.ts — AgentLoop Service
 
 入口文件：把驱动注册成 AgentFactory，让 `ctx.agents.create()` 能创建出 ReactLoopAgent 驱动的 Agent。
 
-### The `AgentLoop` Service
+### `AgentLoop` Service
 
 ```ts
 export class AgentLoop extends Service implements AgentFactory {
@@ -57,7 +56,7 @@ const INACTIVE_STATES: ReadonlySet<FiberState> = new Set([
 
 **职责**：拒绝在不可用的 Context 状态下创建或恢复 Agent。
 
-### Turn boundary projection
+### Turn 边界投影
 
 想知道"现在跑到第几轮第几步"？读这个投影。它由 `ctx.agents` 注册，Host 端也能通过 `ctx.sessionProjections` 读 inbox 投影：
 
@@ -65,11 +64,11 @@ Turn/Step 边界投影定义在 `packages/core/agent/src/projection.ts`（`turnB
 
 ---
 
-## agent.ts — the ReactLoopAgent driver
+## agent.ts — ReactLoopAgent 驱动
 
 包里最核心的文件：Turn/Step 状态机、取消、唤醒全在这里。
 
-### Constructor
+### 构造函数
 
 ```ts
 constructor(
@@ -79,17 +78,19 @@ constructor(
   public readonly session: Session,
   projections: LoopProjections,
   lastTurn: number,
+  private readonly lifetimeSignal: AbortSignal,
 )
 ```
 
-**前置条件**：`loopCtx` 必须已包含 `agents`、`tools`、`systemPrompt`、`llm`、`agentLoop` 服务。
+**前置条件**：`loopCtx` 必须已包含 `agents`、`tools`、`systemPrompt`、`llm`、`agentLoop` 服务。`lifetimeSignal` 由工厂侧传入，贯穿 Agent 整个生命周期，销毁时中止。
 
 **初始化步骤**：
-1. 创建 `dispatch = agentEvents(loopCtx, this)` — 事件分发器
-2. 创建 `scope = createScope(loopCtx, this)` — Agent 作用域
-3. 创建 `model = new AgentModel(...)` 与 `inbox = new ReactLoopInbox(...)` — 持久化收件箱
-4. 创建 `runtimeContext` 和 `systemPrompt` 投影
-5. 初始 phase = `{ kind: 'idle', lastTurn }`
+1. 记录 `requestSurfaceGeneration`（从 session surface 当前代次）
+2. 创建 `dispatch = agentEvents(loopCtx, this)` — 事件分发器
+3. 创建 `scope = createScope(loopCtx, this)` — Agent 作用域
+4. 创建 `model = new AgentModel(...)` 与 `inbox = new ReactLoopInbox(...)` — 持久化收件箱
+5. 创建 `runtimeContext` 和 `systemPrompt` 投影
+6. 初始 phase = `{ kind: 'idle', lastTurn }`
 
 ### `send()` / `followup()` / `steer()` / `inject()`
 
@@ -129,7 +130,7 @@ cancel(cause: AgentCancelCause, options: CancelOptions = {}): void {
 - `keepInbox=true`：只中止活动，保留 pending 消息供后续使用
 - 如果 phase 已是 `idle`，cancel 不中止任何活动（幂等）
 
-### `turn()` — the main Turn loop
+### `turn()` — 主 Turn 循环
 
 一个 Turn 的完整生命周期：打开、循环跑 Step、确保关闭（finally 写 turn/end）：
 
@@ -146,7 +147,7 @@ private async turn(): Promise<boolean>
 
 **max-tokens 粘性**：如果任何 Step 返回 `max-tokens`，后续 completed Step 不会降级此结果。
 
-### `step()` — one Step execution
+### `step()` — 单 Step 执行
 
 单次"问模型"的全部动作，内含重试循环（失败时可重试）：
 
@@ -215,7 +216,7 @@ private buildRequest(config, preparedCall, tools, position, startsRequestSeries,
 
 Agent 的"待办箱"：持久化到日志、崩溃后可恢复，操作全部通过一个核心 splice 实现。
 
-### The projection definition
+### 投影定义
 
 ```ts
 export const inboxProjectionDefinition = {
@@ -228,7 +229,7 @@ export const inboxProjectionDefinition = {
 
 **折叠逻辑**：对每个 `agent/inbox/spliced` 事件校验坐标与重复 id，应用 toSpliced 得到新状态；非法持久化记录抛错（附 session seq）。
 
-### The ReactLoopInbox class
+### ReactLoopInbox 类
 
 | 方法 | 位置 | 职责 |
 |---|---|---|
@@ -249,11 +250,11 @@ export const inboxProjectionDefinition = {
 
 ---
 
-## assistant-stream.ts — stream accumulation
+## assistant-stream.ts — 流式累积
 
 模型的流式回复一段段到达，这个类负责把它们攒起来，最后决定"算正式回复还是算失败尝试"：
 
-### The AssistantStreamAttempt class
+### `AssistantStreamAttempt` 类
 
 | 属性/方法 | 职责 |
 |---|---|
