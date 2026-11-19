@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-19-sourcereader-chinese-only-library.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-11-19-sourcereader-chinese-only-library.md
+/agent-note-keep-docs-sourcereader-a-chinese-only-library:
+  en: e602101d4847e93e
+  zh: 3c412f6de2fef671
+/agent-note-keep-docs-sourcereader-a-chinese-only-library/problem:
+  en: 13e9f306f4e0f9c4
+  zh: 720b7e8b6af47cc9
+/agent-note-keep-docs-sourcereader-a-chinese-only-library/decision:
+  en: 2f064fac42d305bd
+  zh: 0b26c9524523af5d
+/agent-note-keep-docs-sourcereader-a-chinese-only-library/alternatives-considered:
+  en: ec02d80bb9ebb7a2
+  zh: c9df048945a61da4
+/agent-note-keep-docs-sourcereader-a-chinese-only-library/consequences:
+  en: f5c6cbb02238ced2
+  zh: 5b4d6e852c0cce53
+/agent-note-keep-docs-sourcereader-a-chinese-only-library/verification-ledger:
+  en: 0cbb2175aa9faca0
+  zh: 4b3f6b76487d86b4
