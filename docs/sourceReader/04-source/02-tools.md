@@ -5,7 +5,7 @@ tools 包管两件事：工具的"花名册"（注册、限制、查找）和"�
 
 ## 模块概览
 
-九个文件：主服务、契约、DSL、管线、批调度、执行器、事件、Schema 验证、UI 呈现：
+十个文件：主服务、契约、DSL、管线、批调度、执行器、事件、Schema 验证、UI 呈现、审批错误码：
 
 **源码目录**：`packages/core/tools/src/`
 
@@ -20,6 +20,7 @@ tools 包管两件事：工具的"花名册"（注册、限制、查找）和"�
 | `events.ts` | tools/* 事件声明 | ~58 |
 | `json-schema.ts` | JSON Schema 子集定义 + 验证 | ~656 |
 | `presentation.ts` | ToolCallView / ToolResultView UI 呈现类型 | ~389 |
+| `error-codes.ts` | 审批拒绝/取消/无通道等持久化错误码常量 | ~24 |
 
 ---
 
@@ -135,6 +136,9 @@ async execute(input: ToolBatchInput): Promise<ToolBatchResult>
 4. tools/pre-execute waterfall
    → 'allow' 继续；'deny' 返回 error result；'cancel' 返回取消结果
    → 'ask' 等待 approval service（allowed-once → allow；拒绝/取消/无通道 → deny）
+     deny 时记录的错误名与码见 `error-codes.ts`：错误名 `APPROVAL_ERROR_NAME`（`'ApprovalError'`），
+     码为 `APPROVAL_REJECTED` / `APPROVAL_CANCELLED` / `APPROVAL_UNAVAILABLE`（三者合成 `ApprovalErrorCode`）；
+     这些字符串值是持久化契约，注册表把它们记到失败 tool result 上，消费方按字符串比较（该文件不 re-export）
 
 5. 单调守卫检查
    const reason = service.checkGuards(exec)
