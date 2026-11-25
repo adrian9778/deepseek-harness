@@ -22,7 +22,7 @@ llm 包是"和模型说话"的抽象层：上层只认 LlmRuntime 服务和 Stre
 | `retry-policy.ts` | ResolvedRetryPolicy、resolveRetryPolicy | ~201 |
 | `brand.ts` | ProviderRequestId 品牌类型 | ~76 |
 | `attribution.ts` | attributionHeaders() | ~90 |
-| `api-key.ts` | normalizeApiKey | ~41 |
+| `request-images.ts` | 请求图片引用收集与逐次传输预算（IMAGE_OFFLOAD_REQUIRED） | ~112 |
 | `adapter-failure.ts` | normalizeLlmFailure | ~108 |
 
 ---

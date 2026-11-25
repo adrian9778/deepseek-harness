@@ -5,7 +5,7 @@ session 包是全系统最底层的包：类型、日志类、表面管理、请
 
 ## 模块概览
 
-十个文件各管一摊：类型、主类、表面管理、请求头、分叉、修复、辅助工具。读的时候建议先看 types.ts 建立词汇，再看 index.ts 主类：
+十二个文件各管一摊：类型、主类、表面管理、请求头、分叉、修复、验证、辅助工具。读的时候建议先看 types.ts 建立词汇，再看 index.ts 主类：
 
 **源码目录**：`packages/core/session/src/`
 
@@ -13,9 +13,11 @@ session 包是全系统最底层的包：类型、日志类、表面管理、请
 |---|---|---|
 | `index.ts` | Session 类 + SessionStore 服务 | ~1555 |
 | `types.ts` | SessionEventMap、SessionHeader、品牌类型 | ~574 |
+| `validation.ts` | header / 种子事件 / 继承切点验证（构造与日志校验共用） | ~570 |
 | `surface.ts` | SurfaceManager、deriveEventMessage、foldSurface | ~758 |
 | `request-header.ts` | canonicalHeader、headerEquals、foldRequestHeader | ~69 |
 | `fork.ts` | buildForkSeed | ~30 |
+| `fork-error.ts` | SessionForkError 与 fork 拒绝码 | ~22 |
 | `repair.ts` | ToolCallRecovery、interruptedTurnClosers | ~211 |
 | `seq-ranges.ts` | SessionSeq 辅助 | ~73 |
 | `tool-history.ts` | ToolHistoryProjection | ~75 |

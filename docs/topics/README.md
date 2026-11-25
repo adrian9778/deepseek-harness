@@ -5,3 +5,4 @@
 | 篇目 | 定位 |
 |---|---|
 | [dsh 中 Agent 的特点](agent-characteristics.md) | Agent 是什么、官网口径与代码落点的对照，八个特点 + 代码级讲解（符号 + 偏移） |
+| [dsh 中 Agent 编排与多 agent 合作](agent-orchestration.md) | 委派/编排/Team 三层怎么组队干活：统一激活 API、六个委派后端、模型可见工具、深度与并发约束、共享任务板（符号 + 偏移） |
