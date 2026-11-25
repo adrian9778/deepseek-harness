@@ -3,17 +3,19 @@ import { resolve } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import ComputerUseRegistry from '@deepseek-ai/dsh-computer-use'
 import NodeRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
 import Subprocess from '@deepseek-ai/dsh-subprocess'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { CuaConfig, installCua } from '../src/index.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const programPrompt = 'Fixture CUA program guidance\n\nAX read defaults: maxElements=2000, maxDepth=25.\n\nMaximum click holdMs: 5000 ms.'
 
@@ -35,7 +37,7 @@ const provider = {
   },
 }
 
-async function setup(presetIds = ['standard', 'ptc'], withSandbox = true) {
+async function setup(presetIds: readonly string[] | false = ['standard', 'ptc'], withSandbox = true) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   ctx.baseUrl = import.meta.url
@@ -46,14 +48,16 @@ async function setup(presetIds = ['standard', 'ptc'], withSandbox = true) {
   await mountAgentLoopTestHarness(ctx)
   await ctx.plugin(ComputerUseRegistry)
   await ctx.plugin(Subprocess, [])
-  await ctx.plugin(AgentPresets, { default: 'standard' })
-  for (const id of presetIds) {
-    await ctx.plugin({ inject: ['agentPresets'], async* apply(owner: Context) {
-      yield await owner.agentPresets.register({ id, plugins: [] })
-    } })
+  if (presetIds !== false) {
+    await ctx.plugin(AgentPresets, { default: 'standard' })
+    for (const id of presetIds) {
+      await ctx.plugin({ inject: ['agentPresets'], async* apply(owner: Context) {
+        yield await owner.agentPresets.register({ id, plugins: [] })
+      } })
+    }
   }
   const create = (id: string, preset: string) => ctx.agents.create({
-    sessionId: SessionId(id), setup: async (owner) => { await ctx.agentPresets.mount(owner, preset) },
+    sessionId: brandString<SessionId>(id), setup: async (owner) => { await ctx.agentPresets.mount(owner, preset) },
   })
   return { ctx, create }
 }
@@ -61,6 +65,26 @@ async function setup(presetIds = ['standard', 'ptc'], withSandbox = true) {
 async function cuaPrompts(ctx: Context, agent: Agent): Promise<string[]> {
   return (await ctx.systemPrompt.assemble({ scope: agent })).sections
     .filter(section => section.name === 'computer-use:dsh-cua').map(section => section.text)
+}
+
+/** Commit the selected Agent's prepared system messages. */
+async function commitPrompt(ctx: Context, agent: Agent) {
+  const assembly = await ctx.systemPrompt.assemble({ scope: agent, session: agent.session })
+  const updates = assembly.systemUpdates(false)
+  for (const { message, intent } of updates) {
+    agent.session.append('system/message', { turn: 1, step: 1, message }, intent)
+  }
+  // Callers inspect the updates this commit wrote.
+  return { ...assembly, systemUpdates: () => updates }
+}
+
+/** Mount the preset registry with one `ptc` preset in a composition that started without them. */
+async function mountPtcRegistry(ctx: Context) {
+  const registry = await ctx.plugin(AgentPresets, { default: 'ptc' })
+  const declaration = await ctx.plugin({ inject: ['agentPresets'], async* apply(owner: Context) {
+    yield await owner.agentPresets.register({ id: 'ptc', plugins: [] })
+  } })
+  return { registry, declaration }
 }
 
 it.each([
@@ -73,7 +97,7 @@ it.each([
   expect(CuaConfig({ standaloneRunCode: { runtime: { timeoutMs: 1000 } } }).standaloneRunCode.runtime.timeoutMs).toBe(1000)
 })
 
-it('gives every other composed preset a program tool without changing the shared runtime', async () => {
+it('gives every Agent off the configured preset a program tool without changing the shared runtime', async () => {
   const { ctx, create } = await setup(['standard', 'ptc', 'cordis', 'minimal', 'custom'])
   const shared = { programFormat: 'function-body', retainsState: false }
   ctx.provide('ptcRuntime', shared)
@@ -86,11 +110,18 @@ it('gives every other composed preset a program tool without changing the shared
     await handle.dispose()
     expect(ctx.tools.get('cua_run_code', handle.agent)).toBeUndefined()
   }
-  const uncomposed = await ctx.agents.create({ sessionId: SessionId('cua-uncomposed') })
-  expect(ctx.tools.get('cua_run_code', uncomposed.agent)).toBeUndefined()
+  const uncomposed = await ctx.agents.create({ sessionId: brandString<SessionId>('cua-uncomposed') })
+  expect(ctx.tools.get('cua_run_code', uncomposed.agent)).toBeDefined()
   expect(ctx.tools.get('cua', uncomposed.agent)).toBeUndefined()
+  expect(await cuaPrompts(ctx, uncomposed.agent)).toEqual([programPrompt])
   expect(ctx.get('ptcRuntime')).toMatchObject(shared)
+  // The program service lives with the dedicated runtime and leaves with the provider; an Agent without an
+  // environment has nothing to release.
+  await expect(ctx.get('cuaPrograms')?.release(uncomposed.agent)).resolves.toBeUndefined()
+  const image = { attachmentId: 'sha256:' + 'b'.repeat(64), mediaType: 'image/png', bytes: 1, width: 400, height: 200 } as const
+  expect(ctx.get('cuaPrograms')?.screenshotRequestTarget(image as never)).toBeUndefined()
   await mounted.dispose()
+  expect(ctx.get('cuaPrograms')).toBeUndefined()
 })
 
 it('keeps explicitly configured global raw-tool registration', async () => {
@@ -99,8 +130,78 @@ it('keeps explicitly configured global raw-tool registration', async () => {
   const handle = await create('cua-global', 'standard')
   expect(ctx.tools.get('cua', handle.agent)).toBeDefined()
   expect(ctx.tools.get('cua_run_code', handle.agent)).toBeUndefined()
+  const guidance = (await cuaPrompts(ctx, handle.agent)).join('\n')
+  expect(guidance).toContain('Fixture CUA guidance')
+  expect(guidance).not.toContain('Raw tools use { method, params }')
+  expect(guidance).not.toContain('getAccessibilityTree maps to getState')
+  expect(ctx.get('cuaPrograms')).toBeUndefined()
   await mounted.dispose()
   expect(ctx.tools.get('cua', handle.agent)).toBeUndefined()
+})
+
+it('gives Agents a program tool in a composition without a preset registry', async () => {
+  const { ctx } = await setup(false)
+  expect(ctx.get('agentPresets')).toBeUndefined()
+  const existing = await ctx.agents.create({ sessionId: brandString<SessionId>('no-registry-existing') })
+  const mounted = await ctx.plugin(provider, {})
+  await expect.poll(() => ctx.tools.get('cua_run_code', existing.agent)).toBeDefined()
+  const fresh = await ctx.agents.create({ sessionId: brandString<SessionId>('no-registry-fresh') })
+  expect(ctx.tools.schemas(fresh.agent).map(tool => tool.name)).toContain('cua_run_code')
+  expect(ctx.tools.get('cua', fresh.agent)).toBeUndefined()
+  expect(await cuaPrompts(ctx, fresh.agent)).toEqual([programPrompt])
+  await fresh.dispose()
+  expect(ctx.tools.get('cua_run_code', fresh.agent)).toBeUndefined()
+  await mounted.dispose()
+  expect(ctx.tools.get('cua_run_code', existing.agent)).toBeUndefined()
+  expect(await cuaPrompts(ctx, existing.agent)).toEqual([])
+  expect(ctx.get('cuaPrograms')).toBeUndefined()
+})
+
+it('switches the tool form when the preset registry loads, unloads, and loads again', async () => {
+  const { ctx, create } = await setup(false)
+  await ctx.plugin(provider, {})
+  const early = await ctx.agents.create({ sessionId: brandString<SessionId>('registry-early') })
+  expect(ctx.tools.get('cua_run_code', early.agent)).toBeDefined()
+  const { registry, declaration } = await mountPtcRegistry(ctx)
+  const ptc = await create('registry-ptc', 'ptc')
+  expect(ctx.tools.get('cua', ptc.agent)).toBeDefined()
+  expect(ctx.tools.get('cua_run_code', ptc.agent)).toBeUndefined()
+  expect(ctx.tools.get('cua_run_code', early.agent)).toBeDefined()
+  expect(ctx.tools.get('cua', early.agent)).toBeUndefined()
+  await registry.dispose()
+  await expect.poll(() => ctx.tools.get('cua_run_code', ptc.agent)).toBeDefined()
+  expect(ctx.tools.get('cua', ptc.agent)).toBeUndefined()
+  expect(await cuaPrompts(ctx, ptc.agent)).toEqual([programPrompt])
+  // A registry mounted again holds no composition for an Agent created under the previous one.
+  await ctx.plugin(AgentPresets, { default: 'ptc' })
+  await expect.poll(() => declaration.state).toBe(FiberState.ACTIVE)
+  const remounted = await create('registry-remounted', 'ptc')
+  expect(ctx.tools.get('cua', remounted.agent)).toBeDefined()
+  expect(ctx.tools.get('cua_run_code', remounted.agent)).toBeUndefined()
+  expect(ctx.tools.get('cua_run_code', ptc.agent)).toBeDefined()
+  expect(ctx.tools.get('cua', ptc.agent)).toBeUndefined()
+})
+
+it('keeps other Agents current when one registration fails as the preset registry unloads', async () => {
+  const { ctx, create } = await setup(false)
+  const mounted = await ctx.plugin(provider, {})
+  const { registry } = await mountPtcRegistry(ctx)
+  const failing = await create('unload-failing', 'ptc')
+  const other = await create('unload-other', 'ptc')
+  expect(ctx.tools.get('cua', failing.agent)).toBeDefined()
+  expect(ctx.tools.get('cua', other.agent)).toBeDefined()
+  const warn = vi.spyOn(mounted.ctx.logger, 'warn').mockImplementation(() => {})
+  const section = vi.spyOn(ctx.systemPrompt, 'section').mockImplementationOnce(() => { throw new Error('program prompt failed') })
+  onTestFinished(() => { section.mockRestore(); warn.mockRestore() })
+  await registry.dispose()
+  await expect.poll(() => ctx.tools.get('cua_run_code', other.agent)).toBeDefined()
+  expect(warn.mock.calls).toEqual([['CUA tool scope update failed: Error: program prompt failed']])
+  expect(ctx.tools.get('cua', failing.agent)).toBeUndefined()
+  expect(ctx.tools.get('cua_run_code', failing.agent)).toBeUndefined()
+  // The registry's next load retries the Agent whose registration failed.
+  await ctx.plugin(AgentPresets, { default: 'ptc' })
+  await expect.poll(() => ctx.tools.get('cua_run_code', failing.agent)).toBeDefined()
+  expect(await cuaPrompts(ctx, failing.agent)).toEqual([programPrompt])
 })
 
 it('selects one CUA transport for existing and new Agents and removes both on unload', async () => {
@@ -127,13 +228,19 @@ it('selects one CUA transport for existing and new Agents and removes both on un
   expect(standardSections.find(section => section.name === 'computer-use:dsh-cua')?.text).toContain('Fixture CUA program guidance')
   await ctx.agentPresets.select(existing.agent, 'ptc')
   await expect.poll(() => ctx.tools.get('cua', existing.agent)).toBeDefined()
+  await commitPrompt(ctx, existing.agent)
   await fresh.dispose()
   expect(ctx.tools.get('cua', fresh.agent)).toBeUndefined()
   await mounted.dispose()
   expect(ctx.tools.get('cua_run_code', standard.agent)).toBeUndefined()
   expect(ctx.tools.get('cua', existing.agent)).toBeUndefined()
-  expect((await ctx.systemPrompt.assemble({ scope: existing.agent })).sections)
-    .not.toContainEqual(expect.objectContaining({ name: 'computer-use:dsh-cua' }))
+  const retirement = await commitPrompt(ctx, existing.agent)
+  expect(admittedMessages(retirement).flatMap(message => message.source.sections ?? []))
+    .toContainEqual(expect.objectContaining({ name: 'computer-use:dsh-cua', state: 'retired' }))
+  expect(admittedMessages(retirement).flatMap(message => message.content))
+    .toContainEqual({ type: 'text', text: 'The CUA instructions no longer apply.' })
+  expect((await ctx.systemPrompt.assemble({ scope: existing.agent })).sections
+    .some(section => section.name === 'computer-use:dsh-cua')).toBe(false)
   const reloaded = await ctx.plugin(provider, {})
   await expect.poll(() => ctx.tools.get('cua', existing.agent)).toBeDefined()
   expect(ctx.tools.get('cua', standard.agent)).toBeUndefined()
@@ -210,10 +317,35 @@ it('creates raw Agents while private runtime startup is pending', async () => {
   expect(raw).toBeDefined()
   expect((await cuaPrompts(ctx, ptc.agent)).join('')).toContain('Fixture CUA guidance')
   await expect(create('private-pending-standard', 'standard')).rejects.toThrow('CUA program tool is unavailable')
+  await expect(ctx.agents.create({ sessionId: brandString<SessionId>('private-pending-uncomposed') }))
+    .rejects.toThrow('CUA program tool is unavailable')
   await ctx.plugin(Sandbox)
   const standard = await create('private-restored-standard', 'standard')
   expect(ctx.tools.get('cua_run_code', standard.agent)).toBeDefined()
   expect(ctx.tools.get('cua', ptc.agent)).toBe(raw)
+})
+
+it('creates raw Agents at every point of provider startup while the private runtime fails', async () => {
+  const { ctx, create } = await setup()
+  const report = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+  onTestFinished(() => { report.mockRestore() })
+  const { agent } = await create('startup-ptc', 'ptc')
+  const starting = ctx.plugin(provider, { standaloneRunCode: { runtime: { maxOutputBytes: 1 } } })
+  // A real creation spans several microtasks. The provider's listener is the only one here, so each
+  // announcement reaches it in the microtask that sends it.
+  const outcomes: Promise<string>[] = []
+  let announcedAfterRegistration = false
+  for (let turn = 0; turn < 32; turn++) {
+    announcedAfterRegistration ||= ctx.tools.get('cua', agent) !== undefined
+    outcomes.push(ctx.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' })
+      .then(() => 'created', (error: unknown) => String(error)))
+    await Promise.resolve()
+  }
+  expect(announcedAfterRegistration).toBe(true)
+  expect((await Promise.all(outcomes)).filter(outcome => outcome !== 'created')).toEqual([])
+  await starting
+  expect(ctx.tools.get('cua', agent)).toBeDefined()
+  expect(ctx.tools.get('cua_run_code', agent)).toBeUndefined()
 })
 
 it('uses a corrected private runtime after the failed instance is replaced', async () => {
@@ -364,7 +496,7 @@ it('ignores unloaded Session selections and reports a failed live scope update',
   const warn = vi.spyOn(mounted.ctx.logger, 'warn').mockImplementation(() => {})
   const lookup = vi.spyOn(ctx.agentPresets, 'composedPreset')
   onTestFinished(() => { lookup.mockRestore(); warn.mockRestore() })
-  ctx.emit('agent-preset/selected', SessionId('unloaded'), 'ptc')
+  ctx.emit('agent-preset/selected', brandString<SessionId>('unloaded'), 'ptc')
   expect(lookup).not.toHaveBeenCalled()
   lookup.mockImplementationOnce(() => { throw new Error('Preset lookup failed during reload') })
   ctx.emit('agent-preset/selected', handle.agent.id, 'ptc')
@@ -390,7 +522,8 @@ it.each([
   { programFormat: 'script', retainsState: false },
   { programFormat: 'repl', retainsState: false },
   { programFormat: 'function-body', retainsState: true },
-] as const)('selects CUA initialization from retention for $programFormat/$retainsState', async (runtime) => {
+  { programFormat: 'function-body', retainsState: false },
+] as const)('provides CUA initialization for $programFormat/$retainsState', async (runtime) => {
   const { ctx, create } = await setup()
   ctx.provide('ptcRuntime', runtime)
   await ctx.plugin(provider, {})
@@ -400,5 +533,11 @@ it.each([
   expect(prompt?.includes('Persistent PTC initialization:')).toBe(runtime.retainsState)
   expect(prompt?.includes('use the host-provided bridge initialization once and retain the returned objects')).toBe(runtime.retainsState)
   expect(prompt?.includes('cua comes from that bridge and is not a preinstalled global')).toBe(runtime.retainsState)
-  expect(prompt?.includes('var cua = connectCua(() => tools.cua);')).toBe(runtime.retainsState)
+  expect(prompt).toContain('var cua = connectCua(() => tools.cua);')
+  expect(prompt?.includes('at the start of every program')).toBe(!runtime.retainsState)
+  expect(prompt).not.toContain('Raw tools use { method, params }')
 })
+
+function admittedMessages(assembly: import('@deepseek-ai/dsh-system-prompt').PromptAssembly) {
+  return assembly.systemUpdates(false).map(update => update.message)
+}

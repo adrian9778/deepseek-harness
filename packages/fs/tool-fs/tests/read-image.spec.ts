@@ -5,6 +5,7 @@
  * commit + image-block rendering, attachment admission failures, and the
  * regression that `read` keeps its text-only contract.
  */
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { ToolExecutionPipeline } from '@deepseek-ai/dsh-tools/pipeline'
 import { executeToolFixture, executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 
@@ -18,7 +19,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { PtcImage, PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type { PtcRunRequest, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
-import { ToolCallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { type ToolCallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
@@ -26,10 +27,11 @@ import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import { AttachmentError, AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, type AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import {
   applyReadImageTool,
   formatImageReadOutput,
@@ -114,6 +116,7 @@ async function setup(options: SetupOptions = {}) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   provideWorkingDirectoryFixture(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin((options.toolMode ?? 'native') === 'ptc' ? PtcToolExecutor : NativeToolExecutor)
@@ -155,7 +158,7 @@ function call(ctx: Context, name: string, args: unknown, agent?: object) {
   const execute = name === RUN_CODE_NAME ? executeModelToolFixture : executeToolFixture
   return execute(ctx, {
     signal: testToolSignal,
-    callId: ToolCallId(`img-call-${++callCounter}`),
+    callId: brandString<ToolCallId>(`img-call-${++callCounter}`),
     name,
     arguments: args,
     ...agent ? { agent: agent as never } : {},
@@ -560,7 +563,7 @@ describe('strict image-modality gate', () => {
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn(model))
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('does not declare image input')
-    expect(result.error?.info).toEqual({ name: 'ImageInputError', code: 'IMAGE_UNSUPPORTED_MODEL' })
+    expect(result.error?.info).toEqual({ name: 'ImageInputError', code: 'MODEL_DOES_NOT_SUPPORT_IMAGES' })
   })
 
   it('refuses when the route cannot be resolved (no agent, or no header and no options)', async () => {
@@ -736,7 +739,7 @@ describe('image admission failures', () => {
     FailingStore.failure = failure
     return executeToolFixture(ctx, {
       signal,
-      callId: ToolCallId(`img-call-${++callCounter}`),
+      callId: brandString<ToolCallId>(`img-call-${++callCounter}`),
       name: 'read_image',
       arguments: { file_path: file },
       agent: agentOn('vision-model') as never,
@@ -764,7 +767,7 @@ describe('image admission failures', () => {
 
   it.each([
     'ATTACHMENT_WRITE_FAILED', 'TOO_MANY_IMAGES', 'INVALID_IMAGE_BASE64', 'INVALID_FILE_BASE64', 'INVALID_ATTACHMENT_REF',
-    'ATTACHMENT_CORRUPT', 'ATTACHMENT_NOT_FOUND', 'ATTACHMENT_READ_FAILED', 'ATTACHMENT_PROJECTION_UNSUPPORTED',
+    'IMAGE_REQUEST_TOO_LARGE', 'ATTACHMENT_CORRUPT', 'ATTACHMENT_NOT_FOUND', 'ATTACHMENT_READ_FAILED', 'ATTACHMENT_PROJECTION_UNSUPPORTED',
     'ATTACHMENT_FILES_UNSUPPORTED',
   ] as const)('passes AttachmentError %s without a read remedy through unchanged', async (code) => {
     const result = await failingSave(() => new AttachmentError('Stored attachment failed.', code))
@@ -843,7 +846,7 @@ describe('image admission failures', () => {
       }
 
       async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
-        return { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 }
+        return { attachmentId: brandString<AttachmentId>('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 }
       }
 
       readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
@@ -877,7 +880,7 @@ describe('image admission failures', () => {
 
       async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         return {
-          attachmentId: AttachmentId('sha256:feed'),
+          attachmentId: brandString<AttachmentId>('sha256:feed'),
           mediaType: input.mediaType,
           bytes: 7,
           width: 2,
@@ -933,6 +936,7 @@ describe('registration surface', () => {
     const ctx = new Context()
     try {
       provideWorkingDirectoryFixture(ctx)
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
       await ctx.plugin(NativeToolExecutor)
@@ -955,6 +959,7 @@ describe('registration surface', () => {
   it('withdraws read_image when the tool-fs fiber or the attachment store is disposed (HMR safety)', async () => {
     const ctx = new Context()
     provideWorkingDirectoryFixture(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(NativeToolExecutor)
@@ -983,7 +988,7 @@ describe('registration surface', () => {
   it('declares read_image parallel-safe and presents a read-family card', async () => {
     const ctx = await setup()
     expect(new ToolExecutionPipeline(ctx).executionMode({
-      signal: testToolSignal, callId: ToolCallId('img-parallel'), name: 'read_image', arguments: { file_path: 'a.png' },
+      signal: testToolSignal, callId: brandString<ToolCallId>('img-parallel'), name: 'read_image', arguments: { file_path: 'a.png' },
     })).toEqual({ kind: 'parallel' })
     expect(ctx.tools.get('read_image')?.presentCall?.({ file_path: 'shot.png' })).toEqual({
       card: 'generic',

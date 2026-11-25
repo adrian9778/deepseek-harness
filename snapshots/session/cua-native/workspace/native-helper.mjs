@@ -119,15 +119,28 @@ function createApplicationState(socket, record, application, captureBroker, conn
     [application.panelVisibility === 'hidden' ? { ...panel, isOnScreen: false, cacheOnly: true } : panel])]
   const screenshotConfig = new URL('./fixture-screenshot.json', import.meta.url)
   const customScreenshot = existsSync(screenshotConfig) ? JSON.parse(readFileSync(screenshotConfig, 'utf8')) : undefined
+  const activityFile = new URL('./fixture-activity.json', import.meta.url)
+  const activity = existsSync(activityFile) ? JSON.parse(readFileSync(activityFile, 'utf8')) : undefined
+  const pendingActivity = new Set(activity ?? [])
   const snapshots = new Map()
+  const heldInputs = new Map()
   const observedWindows = new Set()
   let acquired = false
   let generation = 0
   let observationChanged = false
+  let partialObservation = false
+  let communicationFailure = false
   let malformedScreenshot = false
+  let incompleteInputTargets = false
   function refuse(code, message) { throw Object.assign(new Error(message), { code }) }
   function call(requestId, method, params) {
     record('call', { requestId, method, params })
+    if (method === 'getHeldInputs') return [...heldInputs.values()]
+    if (method === 'releaseHeldInputs') {
+      const released = [...heldInputs.values()].reverse()
+      heldInputs.clear()
+      return released
+    }
     if (method === 'applicationIcons') return Object.fromEntries(params.paths.map(path => [path, `data:image/png;base64,${png}`]))
     if (method === 'openPermissionSettings') return { opened: true }
     if (method === 'permissionStatus' || method === 'requestPermission') {
@@ -172,17 +185,33 @@ function createApplicationState(socket, record, application, captureBroker, conn
       if (existsSync(new URL('./fixture-ax-failure', import.meta.url))) refuse('NATIVE_ERROR', 'Fixture accessibility read failed')
       if (observationChanged) {
         observationChanged = false
-        refuse('STALE_SNAPSHOT', 'Accessibility tree changed during observation; read fresh getAccessibilityTree')
+        refuse('AX_OBSERVATION_UNAVAILABLE', 'Accessibility observation failed: Accessibility read AXRole failed with error -25202. Read fresh state or use a screenshot; do not repeat input automatically')
+      }
+      if (communicationFailure) {
+        communicationFailure = false
+        refuse('AX_OBSERVATION_UNAVAILABLE', 'Accessibility observation failed: Accessibility read AXChildren failed with error -25204. Read fresh state or use a screenshot; do not repeat input automatically')
       }
       for (const id of params.windowId === undefined ? windows().map(window => window.windowId) : [params.windowId]) observedWindows.add(id)
       generation++
       const axless = params.windowId === '8'
       const snapshotId = `${scope}-snapshot-${generation}`
       snapshots.set(params.windowId ?? null, { snapshotId, windowId: params.windowId ?? null, axless })
+      if (partialObservation) {
+        partialObservation = false
+        const appScope = params.windowId === undefined
+        return { appHandle: app.appHandle, windowId: params.windowId ?? null, snapshotId,
+          tree: appScope
+            ? 'AX scope=application offsets=UTF-16\n[One child could not be read.]\n- AXWindow "Fixture"\n  - [0] AXButton "Increment"'
+            : 'AX scope=window offsets=UTF-16\n- AXWindow "Fixture"\n  - [0] AXButton "Increment"\n  [One child could not be read.]\n  - AXStaticText "Readable sibling"',
+          elements: [{ elementId: '0', role: 'AXButton', title: 'Increment', value: null, description: null,
+            identifier: null, bounds: [60, 80, 100, 20], actions: ['AXPress'], enabled: true }],
+          focusedWindowId: appScope ? null : window.windowId,
+          windows: windows(), truncated: false, hasUnreadableElements: true }
+      }
       if (params.windowId === panel.windowId && application.panelVisibility !== 'closed') return {
         appHandle: app.appHandle, windowId: panel.windowId, snapshotId, focusedWindowId: window.windowId,
-        tree: `AX scope=window offsets=UTF-16\n- AXWindow "Floating panel"\n  - AXStaticText "Floating count: ${application.panelCount}"`,
-        elements: [], windows: windows(), truncated: false,
+        tree: `AX scope=window offsets=UTF-16\n- AXWindow "Floating panel"\n  [One child could not be read.]\n  - AXStaticText "Floating count: ${application.panelCount}"`,
+        elements: [], windows: windows(), truncated: false, hasUnreadableElements: true,
       }
       if (axless) return { appHandle: app.appHandle, windowId: '8', snapshotId,
         tree: '', elements: [], windows: windows(), truncated: false }
@@ -230,7 +259,7 @@ function createApplicationState(socket, record, application, captureBroker, conn
       let systemPointerMoved = false
       if (method === 'mouseMove') {
         const alternate = params.elementId === '0' || (params.x >= 20 && params.x <= 40)
-        systemPointerMoved = params.useSystemPointer === true
+        systemPointerMoved = params.useSystemInput === true
         if (!systemPointerMoved && !alternate && !application.hovering) refuse('HOVER_UNAVAILABLE', 'No AX alternate UI at this target. No input was sent and the pointer did not move.')
         application.hovering = !systemPointerMoved && alternate
       }
@@ -242,7 +271,11 @@ function createApplicationState(socket, record, application, captureBroker, conn
       return { dispatched: true, ...method === 'mouseMove' ? { hoverRoute: systemPointerMoved ? 'system-pointer' : 'accessibility', systemPointerMoved } : {} }
     }
     if (method === 'pressKey' && params.key === 'Return') observationChanged = true
+    if (method === 'pressKey' && params.key === 'F4') partialObservation = true
+    if (method === 'pressKey' && params.key === 'F3') communicationFailure = true
     // Fixture-only keys simulate a pending system callback and its eventual completion.
+    if (method === 'pressKey' && params.key === 'F6') incompleteInputTargets = true
+    if (incompleteInputTargets && method === 'typeText') refuse('PANEL_NOT_READY', 'File panel recipient discovery is incomplete. No input was dispatched. Read fresh state before retrying.')
     if (method === 'pressKey' && params.key === 'F8') application.panelVisibility = 'visible'
     if (method === 'pressKey' && params.key === 'F7' && application.panelVisibility !== 'closed') application.panelVisibility = 'hidden'
     if (method === 'pressKey' && params.key === 'F11') captureBroker.pendingCapture = true
@@ -250,13 +283,36 @@ function createApplicationState(socket, record, application, captureBroker, conn
     if (method === 'pressKey' && params.key === 'F12') malformedScreenshot = true
     if (method === 'pressKey' && params.key === 'F9') { application.frontPid = 42; application.frontWindowId = '99' }
     if (method === 'paste') {
+      if (incompleteInputTargets) refuse('UNSUPPORTED', 'Paste menu discovery is incomplete. No input was dispatched. Read fresh state before retrying.')
       if (application.frontPid !== app.pid) refuse('PASTE_NOT_CONSUMED', 'Paste command was dispatched, but clipboard data was not requested within the read deadline. Bring the target app to the foreground and focus its text input. Inspect the contents before deciding whether to retry; a delayed paste may still run.')
       application.value += params.text
+      return { dispatched: true }
+    }
+    if (method === 'sendKeyEvent' || method === 'toggleMouse') {
+      const input = method === 'sendKeyEvent'
+        ? { kind: 'key', key: params.key, appHandle: params.appHandle, mode: params.useSystemInput ? 'system' : 'application' }
+        : { kind: 'mouse', button: params.mouseButton, appHandle: params.appHandle, windowId: params.windowId, mode: params.useSystemInput ? 'system' : 'window' }
+      const id = JSON.stringify([params.appHandle, params.windowId, method, params.key ?? params.mouseButton])
+      if (params.direction === 'down') heldInputs.set(id, input)
+      else if (!heldInputs.delete(id)) refuse('INVALID_ARGUMENT', 'Input was not held by this connection')
       return { dispatched: true }
     }
     if (method === 'typeText') application.value += params.text
     else if (!['pressKey', 'scroll', 'drag'].includes(method)) refuse('UNSUPPORTED_OPERATION', method)
     return { dispatched: true }
   }
-  return call
+  return (requestId, method, params) => {
+    if (method === 'clearWindowActivity') {
+      pendingActivity.clear()
+      return null
+    }
+    if (method === 'takeWindowActivity') {
+      const rows = [...pendingActivity].filter(row => observedWindows.has(row.windowId) && row.windowId in params.observations)
+      for (const row of rows) pendingActivity.delete(row)
+      return rows
+    }
+    const result = call(requestId, method, params)
+    return result && params.windowId && (method === 'getState' || method === 'screenshot')
+      ? { ...result, activityObservedAt: '1' } : result
+  }
 }
